@@ -1,0 +1,42 @@
+name: "Release"
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [macos-latest] # Currently focusing on Mac
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: install app dependencies and build web
+        run: cd flash_speech_app && npm install --legacy-peer-deps
+
+      - name: build tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: v__VERSION__ # tauri-action replaces this with version from package.json
+          releaseName: "FlashSpeech v__VERSION__"
+          releaseBody: "Automated release from GitHub Actions"
+          releaseDraft: true
+          prerelease: false
+          projectPath: flash_speech_app

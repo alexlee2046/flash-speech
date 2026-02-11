@@ -1,0 +1,19 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1024" height="1024" rx="220" fill="#0A0A0A"/>
+  <circle cx="512" cy="512" r="400" fill="url(#paint0_radial)" fill-opacity="0.1"/>
+  <path d="M200 512H350L420 300L550 724L650 450L750 512H824" stroke="#06B6D4" stroke-width="40" stroke-linecap="round" stroke-linejoin="round">
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="15" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </path>
+  <circle cx="512" cy="512" r="60" fill="#06B6D4">
+    <animate attributeName="opacity" values="0.5;1;0.5" dur="2s" repeatCount="indefinite" />
+  </circle>
+  <defs>
+    <radialGradient id="paint0_radial" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(512 512) rotate(90) scale(400)">
+      <stop stop-color="#06B6D4"/>
+      <stop offset="1" stop-color="#06B6D4" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+</svg>
