@@ -1,0 +1,11 @@
+funasr
+modelscope
+sounddevice
+numpy
+scipy
+pynput
+torch
+torchaudio
+wcwidth
+protobuf
+pyperclip

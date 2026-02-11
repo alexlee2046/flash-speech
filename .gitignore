@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv
+venv/
+ENV/
+.model_cache/
+.home_fake/
+fake_home/
+model_cache/
+temp_recording.wav
+
+# Node
+node_modules/
+dist/
+.tmp_local/
+.npm_cache_local/
+
+# Rust
+target/
+.cargo_local/
+
+# OS
+.DS_Store
