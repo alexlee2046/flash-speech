@@ -49,9 +49,23 @@ def main():
     print("Initializing FlashSpeech (SenseVoiceSmall ONNX) - V3.0 REBOOT")
     print("DEBUG: Typewriter Mode should be ACTIVE.")
     
+    # Graceful exit event
+    exit_event = threading.Event()
+
+    def on_quit():
+        print("\n[Graceful Exit Triggered]")
+        # Only update UI if we are not already exiting
+        if not exit_event.is_set():
+            ui_comms.update("exiting")
+            threading.Thread(target=play_sound, args=("stop",)).start()
+            # Wait a bit for UI to show Goodbye
+            time.sleep(1.5)
+            exit_event.set()
+        return False 
+
     recorder = AudioRecorder()
     injector = TextInjector()
-    ui_comms = UICommunicator() # Starts HTTP server on port 56789
+    ui_comms = UICommunicator(on_exit=on_quit) # Starts HTTP server on port 56789
     
     # Initialize engine last as it takes longest
     engine = SpeechEngine()
@@ -81,9 +95,11 @@ def main():
                     print(f"Result: {text} (Latency: {duration:.3f}s)")
                     ui_comms.update("result", text)
                     injector.type_text(text)
-                    # Reset UI after short delay
-                    time.sleep(2)
-                    ui_comms.update("idle")
+                    # Reset UI after short delay (Non-blocking)
+                    def reset_ui():
+                        if ui_comms.get_state() == "result":
+                            ui_comms.update("idle")
+                    threading.Timer(2.0, reset_ui).start()
                 else:
                     print(f"No speech detected (Latency: {duration:.3f}s)")
                     ui_comms.update("idle")
@@ -98,9 +114,24 @@ def main():
     t.start()
 
     is_pressed = False
+    
+    # Graceful exit event (Moved up)
+    # exit_event = threading.Event() 
+
+    # def on_quit(): ... (Moved up)
+
+    # Global hotkey listener for exit (Cmd+Option+Q)
+    # Note: On Mac, 'cmd' is Key.cmd
+    exit_hotkey = keyboard.GlobalHotKeys({
+        '<cmd>+<alt>+q': on_quit
+    })
+    exit_hotkey.start()
 
     def on_press(key):
         nonlocal is_pressed
+        if exit_event.is_set():
+            return False
+            
         if key == HOTKEY:
             if not is_pressed:
                 is_pressed = True
@@ -112,6 +143,9 @@ def main():
 
     def on_release(key):
         nonlocal is_pressed
+        if exit_event.is_set():
+            return False
+
         if key == HOTKEY:
             if is_pressed:
                 is_pressed = False
@@ -126,17 +160,23 @@ def main():
                     print("No audio recorded.")
                     ui_comms.update("idle")
 
+    print(f"Press <Cmd+Option+Q> to quit safely.")
+
     # Collect events until released
     try:
         with keyboard.Listener(
                 on_press=on_press,
                 on_release=on_release) as listener:
-            listener.join()
+            # Join based on exit event loop to keep main thread alive but responsive
+            while not exit_event.is_set() and listener.running:
+                time.sleep(0.1)
     except KeyboardInterrupt:
         print("\nExiting...")
-        task_queue.put(None) # Signal worker to stop if needed
     finally:
+        task_queue.put(None) # Signal worker to stop if needed
         recorder.terminate()
+        exit_hotkey.stop()
+        print("FlashSpeech shutdown complete.")
 
 if __name__ == "__main__":
     main()

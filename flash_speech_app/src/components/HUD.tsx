@@ -1,33 +1,108 @@
+import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Mic, Zap, Check } from 'lucide-react';
+import { Mic, Zap, Check, WifiOff } from 'lucide-react';
+import { ContextMenu } from './ContextMenu';
 
 interface HUDProps {
-    state: 'idle' | 'listening' | 'processing' | 'result';
+    state: 'idle' | 'listening' | 'processing' | 'result' | 'disconnected' | 'exiting';
     text?: string;
     duration?: number;
 }
 
 export function HUD({ state, text, duration }: HUDProps) {
+    // Generate random heights for the waveform once
+    const waveform = [8, 16, 10, 20, 12, 24, 14, 18, 10, 14, 8, 6];
+
+    // Context Menu State
+    const [menuOpen, setMenuOpen] = useState(false);
+    const [menuPos, setMenuPos] = useState({ x: 0, y: 0 });
+
+    const handleContextMenu = (e: React.MouseEvent) => {
+        e.preventDefault();
+        setMenuPos({ x: e.clientX, y: e.clientY });
+        setMenuOpen(true);
+    };
+
+    const handleQuit = async () => {
+        try {
+            await fetch('http://127.0.0.1:56789/action', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'exit' })
+            });
+        } catch (e) {
+            console.error("Failed to send exit command", e);
+        }
+    };
+
+    const handleSettings = () => {
+        // Placeholder for now
+        console.log("Settings clicked");
+        // Could trigger a toast or open a new window
+    };
+
     return (
-        <div className="flex items-center justify-center">
+        <div 
+            className="flex items-center justify-center relative"
+            onContextMenu={handleContextMenu}
+        >
+            <ContextMenu 
+                x={menuPos.x} 
+                y={menuPos.y} 
+                isOpen={menuOpen} 
+                onClose={() => setMenuOpen(false)}
+                onQuit={handleQuit}
+                onSettings={handleSettings}
+            />
+
             <motion.div
                 layout
                 data-tauri-drag-region
                 initial={{ width: 48, height: 48, borderRadius: 24 }}
                 animate={{
-                    width: state === 'idle' ? 48 : (state === 'result' && text && text.length > 20 ? 'auto' : 320),
+                    width: state === 'idle' || state === 'disconnected' ? 48 : (state === 'result' && text && text.length > 20 ? 'auto' : 320),
                     height: state === 'result' && text && text.length > 50 ? 'auto' : 48,
-                    borderRadius: 24
+                    borderRadius: 24,
+                    borderColor: state === 'disconnected' ? 'rgba(239, 68, 68, 0.3)' : 'rgba(255, 255, 255, 0.1)'
                 }}
                 transition={{ type: "spring", stiffness: 400, damping: 25 }}
-                className="glass-panel relative flex items-center justify-center overflow-hidden"
-                style={{ minWidth: 48, minHeight: 48, maxWidth: 600 }}
+                className="glass-panel relative flex items-center justify-center overflow-hidden border"
+                style={{ 
+                    minWidth: 48, minHeight: 48, maxWidth: 600,
+                    backgroundColor: state === 'disconnected' ? 'rgba(0,0,0,0.6)' : undefined 
+                }}
             >
                 {/* Subtle continuous border glow */}
-                <div className="absolute inset-0 rounded-full border border-white/10 pointer-events-none" />
+                <div className={`absolute inset-0 rounded-full border pointer-events-none ${state === 'disconnected' ? 'border-red-500/20' : 'border-white/10'}`} />
 
                 {/* Inner Content */}
                 <AnimatePresence mode="wait">
+
+                    {/* DISCONNECTED */}
+                    {state === 'disconnected' && (
+                        <motion.div
+                            key="disconnected"
+                            initial={{ opacity: 0, scale: 0.5 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.5 }}
+                            className="text-red-400"
+                        >
+                            <WifiOff className="w-5 h-5" />
+                        </motion.div>
+                    )}
+
+                    {/* EXITING: Goodbye */}
+                    {state === 'exiting' && (
+                        <motion.div
+                            key="exiting"
+                            initial={{ opacity: 0, scale: 0.5 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.5 }}
+                            className="flex items-center space-x-2 text-rose-400 font-medium text-sm"
+                        >
+                            <span>👋 Goodbye!</span>
+                        </motion.div>
+                    )}
 
                     {/* IDLE: Breathing Dot */}
                     {state === 'idle' && (
@@ -50,18 +125,18 @@ export function HUD({ state, text, duration }: HUDProps) {
                             exit={{ opacity: 0 }}
                             className="flex items-center space-x-1 h-4"
                         >
-                            <Mic className="w-4 h-4 text-cyan-400 mr-2" />
-                            {[...Array(12)].map((_, i) => (
+                            <Mic className="w-4 h-4 text-cyan-400 mr-3" />
+                            {waveform.map((h, i) => (
                                 <motion.div
                                     key={i}
-                                    className="w-0.5 bg-cyan-400 rounded-full"
+                                    className="w-1 bg-cyan-400 rounded-full"
                                     animate={{
-                                        height: [4, 12 + Math.random() * 8, 4],
-                                        opacity: [0.3, 1, 0.3]
+                                        height: [4, h, 4],
+                                        opacity: [0.5, 1, 0.5]
                                     }}
                                     transition={{
                                         repeat: Infinity,
-                                        duration: 0.4,
+                                        duration: 0.5 + Math.random() * 0.5, // Randomize duration for organic feel
                                         delay: i * 0.05,
                                         ease: "easeInOut"
                                     }}
@@ -77,10 +152,15 @@ export function HUD({ state, text, duration }: HUDProps) {
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
-                            className="flex items-center space-x-2 text-cyan-500 font-mono text-xs tracking-widest"
+                            className="flex items-center space-x-3 text-cyan-500 font-mono text-xs tracking-widest"
                         >
-                            <Zap className="w-4 h-4 animate-pulse" />
-                            <span>PROCESSING</span>
+                            <motion.div 
+                                animate={{ rotate: 360 }}
+                                transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                            >
+                                <Zap className="w-4 h-4" />
+                            </motion.div>
+                            <span>THINKING...</span>
                         </motion.div>
                     )}
 
@@ -88,18 +168,19 @@ export function HUD({ state, text, duration }: HUDProps) {
                     {state === 'result' && (
                         <motion.div
                             key="result"
-                            initial={{ opacity: 0, scale: 0.95 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.95 }}
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -10 }}
                             className="px-6 py-3 flex items-center w-full"
                         >
-                            <Check className="w-4 h-4 text-emerald-400 mr-3 shrink-0" />
-                            <span className="text-white text-sm font-medium leading-relaxed drop-shadow-md">
+                            <div className="bg-emerald-500/20 p-1.5 rounded-full mr-3 shrink-0">
+                                <Check className="w-3 h-3 text-emerald-400" />
+                            </div>
+                            <span className="text-white text-sm font-medium leading-relaxed drop-shadow-md selection:bg-cyan-500/30">
                                 {text}
                             </span>
                         </motion.div>
                     )}
-
                 </AnimatePresence>
             </motion.div>
         </div>

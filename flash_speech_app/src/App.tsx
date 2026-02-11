@@ -4,7 +4,7 @@ import './index.css'; // Will be created later
 
 function App() {
     // Mock state for now, will connect to backend via FS or Event later
-    const [state, setState] = useState<'idle' | 'listening' | 'processing' | 'result'>('idle');
+    const [state, setState] = useState<'idle' | 'listening' | 'processing' | 'result' | 'disconnected' | 'exiting'>('disconnected');
     const [text, setText] = useState('');
 
     useEffect(() => {
@@ -15,9 +15,13 @@ function App() {
                     const data = await res.json();
                     setState(data.state);
                     if (data.text) setText(data.text);
+                    
+                    // Handle exit specifically if needed, but state update is enough
+                } else {
+                    setState('disconnected');
                 }
             } catch (e) {
-                // Ignore connection errors (server might not be up)
+                setState('disconnected');
             }
         }, 100); // 100ms polling
 

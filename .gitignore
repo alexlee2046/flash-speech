@@ -16,6 +16,7 @@ node_modules/
 dist/
 .tmp_local/
 .npm_cache_local/
+.npm-cache/
 
 # Rust
 target/
