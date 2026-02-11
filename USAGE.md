@@ -1,23 +1,41 @@
-# FlashSpeech Usage
+# FlashSpeech 使用指南
 
-## Quick Start
+## 快速开始
 
-1.  **Activate Environment**:
+1.  **激活虚拟环境**：
     ```bash
     source venv/bin/activate
     ```
 
-2.  **Run Application**:
+2.  **运行应用**：
     ```bash
     python main.py
     ```
 
-## Controls
-- **Hold `F4`**: Record audio.
-- **Release `F4`**: Transcribe and inject text.
-- **`Ctrl+C`**: Stop the application.
+## 操作方式
+- **按住 `F4`**：开始录音
+- **松开 `F4`**：停止录音并自动识别、输入文字
+- **`Cmd+Option+Q`**：安全退出应用
+- **`Ctrl+C`**：强制退出
 
-## Troubleshooting
-- **No Microphone**: Ensure your terminal has Microphone permissions in *System Settings > Privacy & Security > Microphone*.
-- **No Key Injection**: Ensure your terminal has Accessibility permissions in *System Settings > Privacy & Security > Accessibility*.
-- **Latency**: First run might be slow due to model loading. Consecutive runs should be fast.
+## HUD 状态说明
+| 状态 | 显示 | 含义 |
+|------|------|------|
+| 🔵 呼吸点 | 青色小圆点 | 空闲，等待录音 |
+| 🎤 波形 | 麦克风 + 波形动画 | 正在录音 |
+| ⚡ 转圈 | 闪电图标旋转 | 正在识别 |
+| ✅ 文字 | 绿色勾 + 识别结果 | 识别完成 |
+| ⚠️ 警告 | 黄色三角 | 识别出错 |
+| 🔴 断连 | 红色断网图标 | 后端未连接 |
+| 👋 再见 | 退出提示 | 正在关闭 |
+
+## 注意事项
+- **录音过短**：按住 F4 不足 0.3 秒会自动丢弃，避免误触
+- **识别结果显示时间**：根据文字长度自动调整（最少 2 秒）
+- **剪贴板**：���字通过剪贴板粘贴注入，注入完成后会自动恢复原剪贴板内容
+
+## 故障排除
+- **无法录音**：确保终端在 *系统设置 > 隐私与安全 > 麦克风* 中有权限
+- **无法输入文字**：确保终端在 *系统设置 > 隐私与安全 > 辅助功能* 中有权限
+- **首次启动慢**：首次运行需要下载模型，后续启动会快很多
+- **HUD 显示断连**：确保 Python 后端 (`python main.py`) 正在运行

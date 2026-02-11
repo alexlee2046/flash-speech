@@ -1,40 +1,45 @@
 {
-  "$schema": "../node_modules/@tauri-apps/cli/schema.json",
-  "productName": "flash-speech",
-  "version": "0.1.0",
-  "identifier": "com.flashspeech.assistant",
   "build": {
     "beforeBuildCommand": "npm run build",
-    "beforeDevCommand": "npm run dev",
-    "devUrl": "http://localhost:1420",
-    "frontendDist": "../dist"
+    "beforeDevCommand": "",
+    "devPath": "http://localhost:1421",
+    "distDir": "../dist"
   },
-  "app": {
-    "windows": [
-      {
-        "title": "FlashSpeech HUD",
-        "width": 600,
-        "height": 120,
-        "decorations": false,
-        "transparent": true,
-        "alwaysOnTop": true,
-        "center": true,
-        "skipTaskbar": true
-      }
-    ],
+  "package": {
+    "productName": "flash-speech",
+    "version": "0.1.0"
+  },
+  "tauri": {
+    "allowlist": {
+      "all": true
+    },
+    "bundle": {
+      "active": true,
+      "icon": [
+        "icons/32x32.png",
+        "icons/128x128.png",
+        "icons/128x128@2x.png",
+        "icons/icon.icns",
+        "icons/icon.ico"
+      ],
+      "identifier": "com.flashspeech.assistant",
+      "targets": "all"
+    },
     "security": {
       "csp": null
-    }
-  },
-  "bundle": {
-    "active": true,
-    "targets": "all",
-    "icon": [
-      "icons/32x32.png",
-      "icons/128x128.png",
-      "icons/128x128@2x.png",
-      "icons/icon.icns",
-      "icons/icon.ico"
+    },
+    "windows": [
+      {
+        "alwaysOnTop": true,
+        "center": true,
+        "decorations": false,
+        "height": 120,
+        "label": "main",
+        "skipTaskbar": true,
+        "title": "FlashSpeech HUD",
+        "transparent": true,
+        "width": 600
+      }
     ]
   }
 }

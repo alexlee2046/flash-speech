@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Settings, Power, X } from 'lucide-react';
+import { Settings, Power } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface ContextMenuProps {

@@ -1,25 +1,27 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Mic, Zap, Check, WifiOff } from 'lucide-react';
+import { Mic, Zap, Check, WifiOff, AlertTriangle } from 'lucide-react';
 import { ContextMenu } from './ContextMenu';
 
 interface HUDProps {
-    state: 'idle' | 'listening' | 'processing' | 'result' | 'disconnected' | 'exiting';
+    state: 'idle' | 'listening' | 'processing' | 'result' | 'disconnected' | 'exiting' | 'error';
     text?: string;
-    duration?: number;
 }
 
-export function HUD({ state, text, duration }: HUDProps) {
-    // Generate random heights for the waveform once
+export function HUD({ state, text }: HUDProps) {
     const waveform = [8, 16, 10, 20, 12, 24, 14, 18, 10, 14, 8, 6];
 
-    // Context Menu State
     const [menuOpen, setMenuOpen] = useState(false);
     const [menuPos, setMenuPos] = useState({ x: 0, y: 0 });
 
     const handleContextMenu = (e: React.MouseEvent) => {
         e.preventDefault();
-        setMenuPos({ x: e.clientX, y: e.clientY });
+        // 边界检测：确保菜单不超出窗口
+        const menuWidth = 160;
+        const menuHeight = 100;
+        const x = Math.min(e.clientX, window.innerWidth - menuWidth);
+        const y = Math.min(e.clientY, window.innerHeight - menuHeight);
+        setMenuPos({ x: Math.max(0, x), y: Math.max(0, y) });
         setMenuOpen(true);
     };
 
@@ -36,20 +38,21 @@ export function HUD({ state, text, duration }: HUDProps) {
     };
 
     const handleSettings = () => {
-        // Placeholder for now
-        console.log("Settings clicked");
-        // Could trigger a toast or open a new window
+        // TODO: implement settings
     };
 
+    // 截断过长文本用于显示
+    const displayText = text && text.length > 200 ? text.slice(0, 200) + '…' : text;
+
     return (
-        <div 
+        <div
             className="flex items-center justify-center relative"
             onContextMenu={handleContextMenu}
         >
-            <ContextMenu 
-                x={menuPos.x} 
-                y={menuPos.y} 
-                isOpen={menuOpen} 
+            <ContextMenu
+                x={menuPos.x}
+                y={menuPos.y}
+                isOpen={menuOpen}
                 onClose={() => setMenuOpen(false)}
                 onQuit={handleQuit}
                 onSettings={handleSettings}
@@ -60,22 +63,29 @@ export function HUD({ state, text, duration }: HUDProps) {
                 data-tauri-drag-region
                 initial={{ width: 48, height: 48, borderRadius: 24 }}
                 animate={{
-                    width: state === 'idle' || state === 'disconnected' ? 48 : (state === 'result' && text && text.length > 20 ? 'auto' : 320),
-                    height: state === 'result' && text && text.length > 50 ? 'auto' : 48,
+                    width: state === 'idle' || state === 'disconnected' ? 48
+                        : state === 'error' ? 280
+                        : (state === 'result' && displayText && displayText.length > 20 ? 'auto' : 320),
+                    height: state === 'result' && displayText && displayText.length > 50 ? 'auto' : 48,
                     borderRadius: 24,
-                    borderColor: state === 'disconnected' ? 'rgba(239, 68, 68, 0.3)' : 'rgba(255, 255, 255, 0.1)'
+                    borderColor: state === 'disconnected' ? 'rgba(239, 68, 68, 0.3)'
+                        : state === 'error' ? 'rgba(245, 158, 11, 0.3)'
+                        : 'rgba(255, 255, 255, 0.1)'
                 }}
                 transition={{ type: "spring", stiffness: 400, damping: 25 }}
                 className="glass-panel relative flex items-center justify-center overflow-hidden border"
-                style={{ 
+                style={{
                     minWidth: 48, minHeight: 48, maxWidth: 600,
-                    backgroundColor: state === 'disconnected' ? 'rgba(0,0,0,0.6)' : undefined 
+                    backgroundColor: state === 'disconnected' ? 'rgba(0,0,0,0.6)' : undefined
                 }}
             >
-                {/* Subtle continuous border glow */}
-                <div className={`absolute inset-0 rounded-full border pointer-events-none ${state === 'disconnected' ? 'border-red-500/20' : 'border-white/10'}`} />
+                {/* 边框光晕 */}
+                <div className={`absolute inset-0 rounded-full border pointer-events-none ${
+                    state === 'disconnected' ? 'border-red-500/20'
+                    : state === 'error' ? 'border-amber-500/20'
+                    : 'border-white/10'
+                }`} />
 
-                {/* Inner Content */}
                 <AnimatePresence mode="wait">
 
                     {/* DISCONNECTED */}
@@ -91,7 +101,25 @@ export function HUD({ state, text, duration }: HUDProps) {
                         </motion.div>
                     )}
 
-                    {/* EXITING: Goodbye */}
+                    {/* ERROR */}
+                    {state === 'error' && (
+                        <motion.div
+                            key="error"
+                            initial={{ opacity: 0, scale: 0.5 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.5 }}
+                            className="flex items-center space-x-2 px-4"
+                        >
+                            <div className="bg-amber-500/20 p-1.5 rounded-full shrink-0">
+                                <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                            </div>
+                            <span className="text-amber-300 text-xs font-medium truncate">
+                                识别失败
+                            </span>
+                        </motion.div>
+                    )}
+
+                    {/* EXITING */}
                     {state === 'exiting' && (
                         <motion.div
                             key="exiting"
@@ -100,11 +128,11 @@ export function HUD({ state, text, duration }: HUDProps) {
                             exit={{ opacity: 0, scale: 0.5 }}
                             className="flex items-center space-x-2 text-rose-400 font-medium text-sm"
                         >
-                            <span>👋 Goodbye!</span>
+                            <span>👋 再见!</span>
                         </motion.div>
                     )}
 
-                    {/* IDLE: Breathing Dot */}
+                    {/* IDLE */}
                     {state === 'idle' && (
                         <motion.div
                             key="idle"
@@ -116,7 +144,7 @@ export function HUD({ state, text, duration }: HUDProps) {
                         />
                     )}
 
-                    {/* LISTENING: Audio Wave */}
+                    {/* LISTENING */}
                     {state === 'listening' && (
                         <motion.div
                             key="listening"
@@ -136,7 +164,7 @@ export function HUD({ state, text, duration }: HUDProps) {
                                     }}
                                     transition={{
                                         repeat: Infinity,
-                                        duration: 0.5 + Math.random() * 0.5, // Randomize duration for organic feel
+                                        duration: 0.5 + Math.random() * 0.5,
                                         delay: i * 0.05,
                                         ease: "easeInOut"
                                     }}
@@ -145,7 +173,7 @@ export function HUD({ state, text, duration }: HUDProps) {
                         </motion.div>
                     )}
 
-                    {/* PROCESSING: Indeterminate Loader */}
+                    {/* PROCESSING */}
                     {state === 'processing' && (
                         <motion.div
                             key="processing"
@@ -154,17 +182,17 @@ export function HUD({ state, text, duration }: HUDProps) {
                             exit={{ opacity: 0 }}
                             className="flex items-center space-x-3 text-cyan-500 font-mono text-xs tracking-widest"
                         >
-                            <motion.div 
+                            <motion.div
                                 animate={{ rotate: 360 }}
                                 transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
                             >
                                 <Zap className="w-4 h-4" />
                             </motion.div>
-                            <span>THINKING...</span>
+                            <span>识别中...</span>
                         </motion.div>
                     )}
 
-                    {/* RESULT: Clean Text */}
+                    {/* RESULT */}
                     {state === 'result' && (
                         <motion.div
                             key="result"
@@ -177,7 +205,7 @@ export function HUD({ state, text, duration }: HUDProps) {
                                 <Check className="w-3 h-3 text-emerald-400" />
                             </div>
                             <span className="text-white text-sm font-medium leading-relaxed drop-shadow-md selection:bg-cyan-500/30">
-                                {text}
+                                {displayText}
                             </span>
                         </motion.div>
                     )}

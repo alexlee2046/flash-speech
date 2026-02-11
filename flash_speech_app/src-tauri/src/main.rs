@@ -4,6 +4,26 @@
 )]
 
 use tauri::{CustomMenuItem, Manager, SystemTray, SystemTrayEvent, SystemTrayMenu, SystemTrayMenuItem};
+use std::thread;
+
+/// 通知 Python 后端优雅退出
+fn notify_backend_exit() {
+    thread::spawn(|| {
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(3))
+            .build();
+        if let Ok(client) = client {
+            let _ = client
+                .post("http://127.0.0.1:56789/action")
+                .header("Content-Type", "application/json")
+                .body(r#"{"action":"exit"}"#)
+                .send();
+        }
+        // 给后端一点时间处理退出
+        thread::sleep(std::time::Duration::from_secs(2));
+        std::process::exit(0);
+    });
+}
 
 fn main() {
   let quit = CustomMenuItem::new("quit".to_string(), "Quit FlashSpeech");
@@ -36,7 +56,7 @@ fn main() {
       SystemTrayEvent::MenuItemClick { id, .. } => {
         match id.as_str() {
           "quit" => {
-            std::process::exit(0);
+            notify_backend_exit();
           }
           "toggle" => {
             let window = app.get_window("main").unwrap();
@@ -53,12 +73,10 @@ fn main() {
       _ => {}
     })
     .setup(|app| {
-        // Set activation policy to Accessory to hide from Dock on macOS
         #[cfg(target_os = "macos")]
         app.set_activation_policy(tauri::ActivationPolicy::Accessory);
         
         let window = app.get_window("main").unwrap();
-        // Ensure transparency is enforced
         #[cfg(target_os = "macos")]
         {
             use cocoa::appkit::{NSWindow, NSColor};

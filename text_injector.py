@@ -2,7 +2,7 @@ from pynput.keyboard import Controller, Key
 import time
 import pyperclip
 import platform
-import random
+
 
 class TextInjector:
     def __init__(self):
@@ -12,25 +12,27 @@ class TextInjector:
     def type_text(self, text):
         if not text:
             return
-        
-        print(f"Injecting text (Typewriter Mode): {text}")
-        
-        # Tech Mode: Instant Paste (Quantum Snap)
-        # 1. Save old clipboard
-        old_cb = pyperclip.paste()
-        # 2. Copy new text
+
+        print(f"Injecting text: {text}")
+
+        try:
+            old_cb = pyperclip.paste()
+        except Exception:
+            old_cb = ""
+
         pyperclip.copy(text)
-        # 3. Trigger Paste (Cmd+V)
-        # Use OS-specific keys
-        if self.os_name == "Darwin":
-            with self.keyboard.pressed(Key.cmd):
-                self.keyboard.press('v')
-                self.keyboard.release('v')
-        else:
-            with self.keyboard.pressed(Key.ctrl):
-                self.keyboard.press('v')
-                self.keyboard.release('v')
-        
-        # 4. Restore clipboard (async or delayed slightly to ensure paste happens)
-        time.sleep(0.1) 
-        pyperclip.copy(old_cb)
+        # 等待剪贴板写入完成
+        time.sleep(0.05)
+
+        paste_key = Key.cmd if self.os_name == "Darwin" else Key.ctrl
+        with self.keyboard.pressed(paste_key):
+            self.keyboard.press('v')
+            self.keyboard.release('v')
+
+        # 等待粘贴操作完成后再恢复剪贴板
+        time.sleep(0.25)
+
+        try:
+            pyperclip.copy(old_cb)
+        except Exception:
+            pass
