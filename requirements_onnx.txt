@@ -1,9 +1,0 @@
-onnxruntime>=1.17.0
-numpy
-sounddevice
-pynput
-pyperclip
-colorama
-requests
-tqdm
-funasr_onnx
