@@ -22,7 +22,12 @@
       "macOS": {
         "entitlements": null,
         "exceptionDomain": "",
-        "frameworks": [],
+        "frameworks": [
+          "Frameworks/libonnxruntime.1.17.1.dylib",
+          "Frameworks/libonnxruntime.dylib",
+          "Frameworks/libsherpa-onnx-c-api.dylib",
+          "Frameworks/libsherpa-onnx-cxx-api.dylib"
+        ],
         "providerShortName": null,
         "signingIdentity": null
       },
