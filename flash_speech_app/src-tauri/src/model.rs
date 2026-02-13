@@ -39,6 +39,12 @@ pub fn ensure_model(app: &AppHandle) -> Result<(), String> {
         return Ok(());
     }
 
+    // Try bundled models first (for "with-model" builds)
+    if try_copy_bundled_models(app) {
+        eprintln!("[model] Copied bundled models from app resources");
+        return Ok(());
+    }
+
     let dir = model_dir(app)?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("Cannot create model dir: {}", e))?;
 
@@ -46,6 +52,40 @@ pub fn ensure_model(app: &AppHandle) -> Result<(), String> {
     download_file(TOKENS_URL, &dir.join("tokens.txt"), "tokens.txt", app)?;
 
     Ok(())
+}
+
+fn try_copy_bundled_models(app: &AppHandle) -> bool {
+    // Check for models bundled in app resources (Contents/Resources/ on macOS)
+    let exe = match std::env::current_exe() {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
+    // exe: Contents/MacOS/FlashSpeech -> Contents/Resources/models/
+    let resources = exe
+        .parent()
+        .and_then(|p| p.parent())
+        .map(|p| p.join("Resources/models"));
+    let resources = match resources {
+        Some(p) if p.exists() => p,
+        _ => return false,
+    };
+
+    let model_src = resources.join("model.int8.onnx");
+    let tokens_src = resources.join("tokens.txt");
+    if !model_src.exists() || !tokens_src.exists() {
+        return false;
+    }
+
+    let dir = match model_dir(app) {
+        Ok(d) => d,
+        Err(_) => return false,
+    };
+    if std::fs::create_dir_all(&dir).is_err() {
+        return false;
+    }
+
+    std::fs::copy(&model_src, dir.join("model.int8.onnx")).is_ok()
+        && std::fs::copy(&tokens_src, dir.join("tokens.txt")).is_ok()
 }
 
 fn download_file(url: &str, path: &PathBuf, name: &str, app: &AppHandle) -> Result<(), String> {

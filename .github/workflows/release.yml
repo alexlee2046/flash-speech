@@ -5,6 +5,10 @@ on:
     tags:
       - 'v*'
 
+env:
+  MODEL_URL: https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main/model.int8.onnx
+  TOKENS_URL: https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main/tokens.txt
+
 jobs:
   release:
     permissions:
@@ -16,15 +20,19 @@ jobs:
           - platform: macos-latest
             target: aarch64-apple-darwin
             label: macOS-ARM64
-          - platform: macos-13
+            extra_args: ""
+          - platform: macos-14
             target: x86_64-apple-darwin
             label: macOS-x64
+            extra_args: ""
           - platform: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             label: Linux-x64
+            extra_args: "--bundles deb"
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
             label: Windows-x64
+            extra_args: ""
 
     runs-on: ${{ matrix.platform }}
 
@@ -51,7 +59,6 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev \
             libasound2-dev \
-            libfuse2 \
             cmake
 
       - name: Install frontend dependencies
@@ -68,4 +75,29 @@ jobs:
           releaseDraft: true
           prerelease: false
           projectPath: flash_speech_app
-          args: --target ${{ matrix.target }}
+          args: --target ${{ matrix.target }} ${{ matrix.extra_args }}
+
+      # --- Build "with-model" variant for macOS ---
+      - name: Download SenseVoice model
+        if: startsWith(matrix.platform, 'macos')
+        run: |
+          mkdir -p /tmp/models
+          curl -L -o /tmp/models/model.int8.onnx "$MODEL_URL"
+          curl -L -o /tmp/models/tokens.txt "$TOKENS_URL"
+
+      - name: Create macOS with-model DMG
+        if: startsWith(matrix.platform, 'macos')
+        run: |
+          APP_DIR=$(find flash_speech_app/src-tauri/target -name "FlashSpeech.app" -type d | head -1)
+          mkdir -p "$APP_DIR/Contents/Resources/models"
+          cp /tmp/models/* "$APP_DIR/Contents/Resources/models/"
+
+          ARCH=$(echo "${{ matrix.target }}" | cut -d- -f1)
+          VERSION="${GITHUB_REF_NAME#v}"
+          DMG_NAME="FlashSpeech_${VERSION}_${ARCH}_with-model.dmg"
+
+          hdiutil create -volname "FlashSpeech" -srcfolder "$APP_DIR" -ov -format UDZO "/tmp/$DMG_NAME"
+
+          gh release upload "$GITHUB_REF_NAME" "/tmp/$DMG_NAME" --clobber
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
