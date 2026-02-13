@@ -96,7 +96,14 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           DMG_NAME="FlashSpeech_${VERSION}_${ARCH}_with-model.dmg"
 
-          hdiutil create -volname "FlashSpeech" -srcfolder "$APP_DIR" -ov -format UDZO "/tmp/$DMG_NAME"
+          # Create staging dir with app + Applications symlink
+          STAGING="/tmp/dmg-staging"
+          rm -rf "$STAGING"
+          mkdir -p "$STAGING"
+          cp -R "$APP_DIR" "$STAGING/"
+          ln -s /Applications "$STAGING/Applications"
+
+          hdiutil create -volname "FlashSpeech" -srcfolder "$STAGING" -ov -format UDZO "/tmp/$DMG_NAME"
 
           gh release upload "$GITHUB_REF_NAME" "/tmp/$DMG_NAME" --clobber
         env:
