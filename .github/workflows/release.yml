@@ -1,4 +1,4 @@
-name: "Release"
+name: Release
 
 on:
   push:
@@ -12,31 +12,59 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: [macos-latest] # Currently focusing on Mac
+        include:
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+            label: macOS-ARM64
+          - platform: macos-13
+            target: x86_64-apple-darwin
+            label: macOS-x64
+          - platform: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            label: Linux-x64
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            label: Windows-x64
 
     runs-on: ${{ matrix.platform }}
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: setup node
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - name: install Rust stable
+      - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
 
-      - name: install app dependencies and build web
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libwebkit2gtk-4.0-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libasound2-dev \
+            cmake
+
+      - name: Install frontend dependencies
         run: cd flash_speech_app && npm install --legacy-peer-deps
 
-      - name: build tauri app
+      - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: v__VERSION__ # tauri-action replaces this with version from package.json
+          tagName: v__VERSION__
           releaseName: "FlashSpeech v__VERSION__"
-          releaseBody: "Automated release from GitHub Actions"
+          releaseBody: "Multi-platform release. First launch downloads the SenseVoice speech model (~100MB)."
           releaseDraft: true
           prerelease: false
           projectPath: flash_speech_app
+          args: --target ${{ matrix.target }}

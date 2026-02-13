@@ -6,16 +6,27 @@
     "distDir": "../dist"
   },
   "package": {
-    "productName": "flash-speech",
-    "version": "0.1.0"
+    "productName": "FlashSpeech",
+    "version": "2.0.0"
   },
   "tauri": {
     "allowlist": {
       "all": true
     },
+    "systemTray": {
+      "iconPath": "icons/icon.png",
+      "iconAsTemplate": true
+    },
     "bundle": {
       "active": true,
-      "icon": [
+      "macOS": {
+        "entitlements": null,
+        "exceptionDomain": "",
+        "frameworks": [],
+        "providerShortName": null,
+        "signingIdentity": null
+      },
+"icon": [
         "icons/32x32.png",
         "icons/128x128.png",
         "icons/128x128@2x.png",
@@ -25,6 +36,7 @@
       "identifier": "com.flashspeech.assistant",
       "targets": "all"
     },
+    "macOSPrivateApi": true,
     "security": {
       "csp": null
     },
@@ -33,12 +45,12 @@
         "alwaysOnTop": true,
         "center": true,
         "decorations": false,
-        "height": 120,
+        "height": 64,
         "label": "main",
         "skipTaskbar": true,
         "title": "FlashSpeech HUD",
         "transparent": true,
-        "width": 600
+        "width": 176
       }
     ]
   }

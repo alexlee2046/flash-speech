@@ -1,212 +1,292 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { invoke } from '@tauri-apps/api/tauri';
+import { appWindow, LogicalSize, LogicalPosition, currentMonitor } from '@tauri-apps/api/window';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Mic, Zap, Check, WifiOff, AlertTriangle } from 'lucide-react';
-import { ContextMenu } from './ContextMenu';
+import { Check, AlertTriangle, Power } from 'lucide-react';
 
 interface HUDProps {
-    state: 'idle' | 'listening' | 'processing' | 'result' | 'disconnected' | 'exiting' | 'error';
+    state: 'starting' | 'idle' | 'listening' | 'processing' | 'result' | 'disconnected' | 'exiting' | 'error';
     text?: string;
 }
 
-export function HUD({ state, text }: HUDProps) {
-    const waveform = [8, 16, 10, 20, 12, 24, 14, 18, 10, 14, 8, 6];
+const spring = { type: "spring" as const, stiffness: 500, damping: 32 };
+const fade = {
+    initial: { opacity: 0 },
+    animate: { opacity: 1 },
+    exit: { opacity: 0 },
+    transition: { duration: 0.15 },
+};
 
+const PILL_H = 48;
+const PAD = 16;
+const MENU_PILL_W = 170; // pill width when showing inline menu
+
+export function HUD({ state, text }: HUDProps) {
     const [menuOpen, setMenuOpen] = useState(false);
-    const [menuPos, setMenuPos] = useState({ x: 0, y: 0 });
+
+    const displayText = text && text.length > 100 ? text.slice(0, 100) + '\u2026' : text;
+
+    // Auto-close menu when state transitions to an active phase
+    // (e.g., user presses shortcut while menu is open)
+    useEffect(() => {
+        if (menuOpen && (state === 'listening' || state === 'processing' || state === 'exiting')) {
+            setMenuOpen(false);
+        }
+    }, [state, menuOpen]);
+
+    const pillWidth = menuOpen ? MENU_PILL_W
+        : state === 'idle' || state === 'disconnected' ? 48
+        : state === 'starting' ? 160
+        : state === 'listening' ? 220
+        : state === 'processing' ? 170
+        : state === 'error' ? 200
+        : state === 'exiting' ? 100
+        : state === 'result' ? Math.min(Math.max(180, (displayText?.length || 0) * 11 + 70), 440)
+        : 48;
+
+    // --- Dynamic window sizing (width only, height constant) ---
+    const initRef = useRef(false);
+    const prevW = useRef(pillWidth);
+    const resizeId = useRef(0); // monotonic counter to cancel stale async resizes
+
+    useEffect(() => {
+        const w = pillWidth + PAD;
+        const h = PILL_H + PAD;
+
+        const was = prevW.current;
+        prevW.current = pillWidth;
+        const delay = pillWidth < was ? 250 : 0;
+
+        const id = ++resizeId.current;
+
+        const timer = setTimeout(async () => {
+            if (resizeId.current !== id) return; // superseded by a newer resize
+            try {
+                if (!initRef.current) {
+                    initRef.current = true;
+                    const monitor = await currentMonitor();
+                    if (!monitor || resizeId.current !== id) return;
+                    const sf = monitor.scaleFactor;
+                    const sw = monitor.size.width / sf;
+                    const sh = monitor.size.height / sf;
+                    await Promise.all([
+                        appWindow.setSize(new LogicalSize(w, h)),
+                        appWindow.setPosition(new LogicalPosition(
+                            Math.round((sw - w) / 2),
+                            Math.round(sh - h - 80),
+                        )),
+                    ]);
+                } else {
+                    const [pos, size, sf] = await Promise.all([
+                        appWindow.outerPosition(),
+                        appWindow.outerSize(),
+                        appWindow.scaleFactor(),
+                    ]);
+                    if (resizeId.current !== id) return; // superseded
+                    const oldW = size.width / sf;
+                    const oldX = pos.x / sf;
+                    const oldY = pos.y / sf;
+                    await Promise.all([
+                        appWindow.setSize(new LogicalSize(w, h)),
+                        appWindow.setPosition(new LogicalPosition(
+                            Math.round(oldX - (w - oldW) / 2),
+                            oldY,
+                        )),
+                    ]);
+                }
+            } catch (e) {
+                console.error('resize', e);
+            }
+        }, delay);
+
+        return () => clearTimeout(timer);
+    }, [pillWidth]);
+
+    // --- Mouse handling ---
+    const menuRef = useRef(menuOpen);
+    menuRef.current = menuOpen;
+
+    // Track active drag listeners for cleanup on unmount
+    const dragCleanupRef = useRef<(() => void) | null>(null);
+
+    useEffect(() => {
+        return () => { dragCleanupRef.current?.(); };
+    }, []);
+
+    const handleMouseDown = (e: React.MouseEvent) => {
+        if (e.button !== 0) return;
+        if (menuRef.current) {
+            setMenuOpen(false);
+            return;
+        }
+
+        // Don't call startDragging() immediately — wait for actual mouse movement.
+        // Immediate startDragging() captures the mouse and swallows contextmenu
+        // events, which breaks trackpad two-finger right-click.
+        dragCleanupRef.current?.(); // cancel any previous drag session
+        const sx = e.screenX, sy = e.screenY;
+        const onMove = (ev: MouseEvent) => {
+            if (Math.abs(ev.screenX - sx) > 3 || Math.abs(ev.screenY - sy) > 3) {
+                cleanup();
+                appWindow.startDragging();
+            }
+        };
+        const onUp = () => cleanup();
+        const cleanup = () => {
+            dragCleanupRef.current = null;
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+        };
+        dragCleanupRef.current = cleanup;
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+    };
+
+    // Auto-close menu after 3s
+    useEffect(() => {
+        if (!menuOpen) return;
+        const t = setTimeout(() => setMenuOpen(false), 3000);
+        return () => clearTimeout(t);
+    }, [menuOpen]);
 
     const handleContextMenu = (e: React.MouseEvent) => {
         e.preventDefault();
-        // 边界检测：确保菜单不超出窗口
-        const menuWidth = 160;
-        const menuHeight = 100;
-        const x = Math.min(e.clientX, window.innerWidth - menuWidth);
-        const y = Math.min(e.clientY, window.innerHeight - menuHeight);
-        setMenuPos({ x: Math.max(0, x), y: Math.max(0, y) });
-        setMenuOpen(true);
+        setMenuOpen(prev => !prev);
     };
 
-    const handleQuit = async () => {
-        try {
-            await fetch('http://127.0.0.1:56789/action', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'exit' })
-            });
-        } catch (e) {
-            console.error("Failed to send exit command", e);
-        }
+    const handleQuit = (e: React.MouseEvent) => {
+        if (e.button !== 0) return; // only left click triggers quit
+        e.stopPropagation();
+        setMenuOpen(false);
+        invoke('quit_app').catch(console.error);
     };
-
-    const handleSettings = () => {
-        // TODO: implement settings
-    };
-
-    // 截断过长文本用于显示
-    const displayText = text && text.length > 200 ? text.slice(0, 200) + '…' : text;
 
     return (
-        <div
-            className="flex items-center justify-center relative"
-            onContextMenu={handleContextMenu}
-        >
-            <ContextMenu
-                x={menuPos.x}
-                y={menuPos.y}
-                isOpen={menuOpen}
-                onClose={() => setMenuOpen(false)}
-                onQuit={handleQuit}
-                onSettings={handleSettings}
-            />
-
+        <div onMouseDown={handleMouseDown} onContextMenu={handleContextMenu}>
             <motion.div
-                layout
-                data-tauri-drag-region
-                initial={{ width: 48, height: 48, borderRadius: 24 }}
-                animate={{
-                    width: state === 'idle' || state === 'disconnected' ? 48
-                        : state === 'error' ? 280
-                        : (state === 'result' && displayText && displayText.length > 20 ? 'auto' : 320),
-                    height: state === 'result' && displayText && displayText.length > 50 ? 'auto' : 48,
-                    borderRadius: 24,
-                    borderColor: state === 'disconnected' ? 'rgba(239, 68, 68, 0.3)'
-                        : state === 'error' ? 'rgba(245, 158, 11, 0.3)'
-                        : 'rgba(255, 255, 255, 0.1)'
-                }}
-                transition={{ type: "spring", stiffness: 400, damping: 25 }}
-                className="glass-panel relative flex items-center justify-center overflow-hidden border"
-                style={{
-                    minWidth: 48, minHeight: 48, maxWidth: 600,
-                    backgroundColor: state === 'disconnected' ? 'rgba(0,0,0,0.6)' : undefined
-                }}
+                animate={{ width: pillWidth, borderRadius: 24 }}
+                transition={spring}
+                className="glass-pill h-12 flex items-center justify-center overflow-hidden cursor-default select-none"
+                style={{ minWidth: 48 }}
             >
-                {/* 边框光晕 */}
-                <div className={`absolute inset-0 rounded-full border pointer-events-none ${
-                    state === 'disconnected' ? 'border-red-500/20'
-                    : state === 'error' ? 'border-amber-500/20'
-                    : 'border-white/10'
-                }`} />
-
                 <AnimatePresence mode="wait">
-
-                    {/* DISCONNECTED */}
-                    {state === 'disconnected' && (
-                        <motion.div
-                            key="disconnected"
-                            initial={{ opacity: 0, scale: 0.5 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.5 }}
-                            className="text-red-400"
+                    {/* INLINE MENU */}
+                    {menuOpen && (
+                        <motion.div key="menu" {...fade}
+                            className="flex items-center px-4 w-full"
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onContextMenu={(e) => e.stopPropagation()}
                         >
-                            <WifiOff className="w-5 h-5" />
-                        </motion.div>
-                    )}
-
-                    {/* ERROR */}
-                    {state === 'error' && (
-                        <motion.div
-                            key="error"
-                            initial={{ opacity: 0, scale: 0.5 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.5 }}
-                            className="flex items-center space-x-2 px-4"
-                        >
-                            <div className="bg-amber-500/20 p-1.5 rounded-full shrink-0">
-                                <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
-                            </div>
-                            <span className="text-amber-300 text-xs font-medium truncate">
-                                识别失败
-                            </span>
-                        </motion.div>
-                    )}
-
-                    {/* EXITING */}
-                    {state === 'exiting' && (
-                        <motion.div
-                            key="exiting"
-                            initial={{ opacity: 0, scale: 0.5 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.5 }}
-                            className="flex items-center space-x-2 text-rose-400 font-medium text-sm"
-                        >
-                            <span>👋 再见!</span>
+                            <button
+                                onMouseDown={handleQuit}
+                                className="text-xs text-rose-400 hover:text-rose-300 flex items-center gap-2"
+                            >
+                                <Power className="w-3.5 h-3.5" />
+                                退出 FlashSpeech
+                            </button>
                         </motion.div>
                     )}
 
                     {/* IDLE */}
-                    {state === 'idle' && (
-                        <motion.div
-                            key="idle"
-                            initial={{ opacity: 0, scale: 0.5 }}
-                            exit={{ opacity: 0, scale: 0.5 }}
-                            className="w-2 h-2 rounded-full bg-cyan-500 shadow-[0_0_10px_rgba(6,182,212,0.8)]"
-                            animate={{ opacity: [0.5, 1, 0.5], scale: 1 }}
-                            transition={{ duration: 2, repeat: Infinity }}
-                        />
+                    {!menuOpen && state === 'idle' && (
+                        <motion.div key="idle" {...fade}>
+                            <motion.div
+                                className="w-2.5 h-2.5 rounded-full bg-white/80"
+                                animate={{ opacity: [0.4, 0.9, 0.4], scale: [0.85, 1, 0.85] }}
+                                transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
+                            />
+                        </motion.div>
+                    )}
+
+                    {/* STARTING */}
+                    {!menuOpen && state === 'starting' && (
+                        <motion.div key="starting" {...fade}
+                            className="flex items-center gap-2.5 px-4 text-white/60 text-xs tracking-wide"
+                        >
+                            <motion.div className="w-1.5 h-1.5 rounded-full bg-white/50"
+                                animate={{ opacity: [0.3, 1, 0.3] }}
+                                transition={{ duration: 1.2, repeat: Infinity }}
+                            />
+                            <span>启动中</span>
+                        </motion.div>
                     )}
 
                     {/* LISTENING */}
-                    {state === 'listening' && (
-                        <motion.div
-                            key="listening"
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            className="flex items-center space-x-1 h-4"
+                    {!menuOpen && state === 'listening' && (
+                        <motion.div key="listening" {...fade}
+                            className="flex items-center gap-3 px-4"
                         >
-                            <Mic className="w-4 h-4 text-cyan-400 mr-3" />
-                            {waveform.map((h, i) => (
-                                <motion.div
-                                    key={i}
-                                    className="w-1 bg-cyan-400 rounded-full"
-                                    animate={{
-                                        height: [4, h, 4],
-                                        opacity: [0.5, 1, 0.5]
-                                    }}
-                                    transition={{
-                                        repeat: Infinity,
-                                        duration: 0.5 + Math.random() * 0.5,
-                                        delay: i * 0.05,
-                                        ease: "easeInOut"
-                                    }}
-                                />
-                            ))}
+                            <motion.div className="w-2 h-2 rounded-full bg-red-400 shrink-0"
+                                animate={{ opacity: [1, 0.4, 1], scale: [1, 0.8, 1] }}
+                                transition={{ duration: 1, repeat: Infinity }}
+                            />
+                            <div className="flex items-center gap-[3px] h-5">
+                                {Array.from({ length: 8 }, (_, i) => (
+                                    <motion.div
+                                        key={i}
+                                        className="w-[3px] rounded-full bg-white/70"
+                                        animate={{ height: [3, 8 + Math.random() * 12, 3] }}
+                                        transition={{
+                                            repeat: Infinity,
+                                            duration: 0.4 + Math.random() * 0.4,
+                                            delay: i * 0.06,
+                                            ease: "easeInOut",
+                                        }}
+                                    />
+                                ))}
+                            </div>
                         </motion.div>
                     )}
 
                     {/* PROCESSING */}
-                    {state === 'processing' && (
-                        <motion.div
-                            key="processing"
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            className="flex items-center space-x-3 text-cyan-500 font-mono text-xs tracking-widest"
+                    {!menuOpen && state === 'processing' && (
+                        <motion.div key="processing" {...fade}
+                            className="flex items-center gap-2.5 px-4 text-white/60 text-xs tracking-wide"
                         >
                             <motion.div
                                 animate={{ rotate: 360 }}
-                                transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-                            >
-                                <Zap className="w-4 h-4" />
-                            </motion.div>
-                            <span>识别中...</span>
+                                transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                                className="w-4 h-4 border-2 border-white/20 border-t-white/70 rounded-full"
+                            />
+                            <span>识别中</span>
                         </motion.div>
                     )}
 
                     {/* RESULT */}
-                    {state === 'result' && (
-                        <motion.div
-                            key="result"
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -10 }}
-                            className="px-6 py-3 flex items-center w-full"
+                    {!menuOpen && state === 'result' && displayText && (
+                        <motion.div key="result" {...fade}
+                            className="flex items-center gap-2 px-4 w-full"
                         >
-                            <div className="bg-emerald-500/20 p-1.5 rounded-full mr-3 shrink-0">
-                                <Check className="w-3 h-3 text-emerald-400" />
-                            </div>
-                            <span className="text-white text-sm font-medium leading-relaxed drop-shadow-md selection:bg-cyan-500/30">
+                            <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                            <span className="text-white/90 text-[13px] leading-tight truncate">
                                 {displayText}
                             </span>
+                        </motion.div>
+                    )}
+
+                    {/* ERROR */}
+                    {!menuOpen && state === 'error' && (
+                        <motion.div key="error" {...fade}
+                            className="flex items-center gap-2 px-4 text-amber-400/80 text-xs"
+                        >
+                            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                            <span>识别失败</span>
+                        </motion.div>
+                    )}
+
+                    {/* DISCONNECTED */}
+                    {!menuOpen && state === 'disconnected' && (
+                        <motion.div key="disconnected" {...fade}>
+                            <div className="w-2.5 h-2.5 rounded-full bg-red-400/60" />
+                        </motion.div>
+                    )}
+
+                    {/* EXITING */}
+                    {!menuOpen && state === 'exiting' && (
+                        <motion.div key="exiting" {...fade}
+                            className="text-white/50 text-xs"
+                        >
+                            再见
                         </motion.div>
                     )}
                 </AnimatePresence>
