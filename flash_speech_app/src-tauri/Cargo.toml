@@ -3,8 +3,8 @@ name = "flash-speech"
 version = "2.0.0"
 description = "FlashSpeech - Voice to Text HUD"
 authors = ["you"]
-license = ""
-repository = ""
+license = "MIT"
+repository = "https://github.com/alexlee2046/flash-speech"
 edition = "2021"
 rust-version = "1.60"
 
