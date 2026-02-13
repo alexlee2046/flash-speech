@@ -40,26 +40,7 @@ html, body, #root {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: linear-gradient(
-    var(--highlight-angle, 135deg),
-    rgba(255, 255, 255, 0.55) 0%,
-    rgba(255, 255, 255, 0.08) 50%,
-    transparent 100%
-  );
   pointer-events: none;
-  animation: highlight-rotate 8s linear infinite;
-}
-
-@keyframes highlight-rotate {
-  from { --highlight-angle: 135deg; }
-  to   { --highlight-angle: 495deg; }
-}
-
-/* Register custom property for animation (WebKit) */
-@property --highlight-angle {
-  syntax: "<angle>";
-  inherits: false;
-  initial-value: 135deg;
 }
 
 /* ── Rim Light: subtle rainbow border ── */
@@ -67,48 +48,18 @@ html, body, #root {
   position: absolute;
   inset: -1px;
   border-radius: inherit;
-  background: conic-gradient(
-    from var(--rim-angle, 0deg),
-    rgba(255, 120, 120, 0.4),
-    rgba(255, 200, 100, 0.4),
-    rgba(100, 255, 150, 0.4),
-    rgba(100, 180, 255, 0.4),
-    rgba(200, 130, 255, 0.4),
-    rgba(255, 120, 120, 0.4)
-  );
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
   padding: 1px;
   pointer-events: none;
-  animation: rim-rotate 6s linear infinite;
   opacity: 0.7;
-}
-
-@keyframes rim-rotate {
-  from { --rim-angle: 0deg; }
-  to   { --rim-angle: 360deg; }
-}
-
-@property --rim-angle {
-  syntax: "<angle>";
-  inherits: false;
-  initial-value: 0deg;
 }
 
 /* Listening state: rim turns red */
 .liquid-glass-rim.listening {
-  background: conic-gradient(
-    from var(--rim-angle, 0deg),
-    rgba(255, 80, 80, 0.6),
-    rgba(255, 120, 100, 0.5),
-    rgba(255, 80, 80, 0.6),
-    rgba(255, 60, 60, 0.5),
-    rgba(255, 80, 80, 0.6)
-  );
   opacity: 0.9;
-  animation: rim-rotate 3s linear infinite;
 }
 
 /* ── Ripple effect (triggered via JS adding .active class) ── */

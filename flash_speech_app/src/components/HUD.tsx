@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/tauri';
 import { appWindow, LogicalSize, LogicalPosition, currentMonitor } from '@tauri-apps/api/window';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useMotionValue, useTransform, animate } from 'framer-motion';
 import { Check, AlertTriangle, Power } from 'lucide-react';
 
 interface HUDProps {
@@ -28,6 +28,55 @@ export function HUD({ state, text }: HUDProps) {
     const prevState = useRef(state);
 
     const displayText = text && text.length > 100 ? text.slice(0, 100) + '\u2026' : text;
+
+    // Highlight rotation (8s cycle) — JS-driven for WKWebView compat
+    const highlightAngle = useMotionValue(135);
+    useEffect(() => {
+        const controls = animate(highlightAngle, 135 + 360, {
+            duration: 8,
+            repeat: Infinity,
+            ease: "linear",
+        });
+        return controls.stop;
+    }, []);
+
+    const highlightBg = useTransform(highlightAngle, (v) =>
+        `linear-gradient(${v}deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.08) 50%, transparent 100%)`
+    );
+
+    // Rim rotation (6s cycle, 3s when listening) — JS-driven for WKWebView compat
+    const rimAngle = useMotionValue(0);
+    const rimDuration = useRef(6);
+    const rimControls = useRef<{ stop: () => void } | null>(null);
+
+    useEffect(() => {
+        const newDuration = state === 'listening' ? 3 : 6;
+        if (newDuration !== rimDuration.current) {
+            rimDuration.current = newDuration;
+            rimControls.current?.stop();
+            const current = rimAngle.get() % 360;
+            rimAngle.set(current);
+            rimControls.current = animate(rimAngle, current + 360, {
+                duration: newDuration,
+                repeat: Infinity,
+                ease: "linear",
+            });
+        }
+        if (!rimControls.current) {
+            rimControls.current = animate(rimAngle, 360, {
+                duration: 6,
+                repeat: Infinity,
+                ease: "linear",
+            });
+        }
+        return () => { rimControls.current?.stop(); };
+    }, [state]);
+
+    const rimBg = useTransform(rimAngle, (v) =>
+        state === 'listening'
+            ? `conic-gradient(from ${v}deg, rgba(255,80,80,0.6), rgba(255,120,100,0.5), rgba(255,80,80,0.6), rgba(255,60,60,0.5), rgba(255,80,80,0.6))`
+            : `conic-gradient(from ${v}deg, rgba(255,120,120,0.4), rgba(255,200,100,0.4), rgba(100,255,150,0.4), rgba(100,180,255,0.4), rgba(200,130,255,0.4), rgba(255,120,120,0.4))`
+    );
 
     // Flash on state transitions
     useEffect(() => {
@@ -187,10 +236,10 @@ export function HUD({ state, text }: HUDProps) {
                 style={{ minWidth: 44 }}
             >
                 {/* Highlight layer */}
-                <div className="liquid-glass-highlight" />
+                <motion.div className="liquid-glass-highlight" style={{ background: highlightBg }} />
 
                 {/* Rim light layer */}
-                <div className={`liquid-glass-rim ${state === 'listening' ? 'listening' : ''}`} />
+                <motion.div className={`liquid-glass-rim ${state === 'listening' ? 'listening' : ''}`} style={{ background: rimBg }} />
 
                 {/* Flash layer */}
                 <div className={`liquid-glass-flash ${flash ? 'active' : ''}`} />
