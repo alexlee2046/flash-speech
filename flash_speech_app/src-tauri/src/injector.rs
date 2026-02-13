@@ -3,8 +3,9 @@ use std::process::Command;
 use std::time::Duration;
 
 #[cfg(target_os = "macos")]
-mod cg_paste {
+mod macos_paste {
     use std::ffi::c_void;
+    use std::process::Command;
 
     type CGEventRef = *mut c_void;
     type CGEventSourceRef = *mut c_void;
@@ -14,6 +15,7 @@ mod cg_paste {
     const K_CG_EVENT_FLAG_COMMAND: u64 = 1 << 20;
     const K_VK_V: u16 = 9;
 
+    #[link(name = "CoreGraphics", kind = "framework")]
     extern "C" {
         fn CGEventSourceCreate(stateID: u32) -> CGEventSourceRef;
         fn CGEventCreateKeyboardEvent(
@@ -23,19 +25,43 @@ mod cg_paste {
         ) -> CGEventRef;
         fn CGEventSetFlags(event: CGEventRef, flags: u64);
         fn CGEventPost(tap: u32, event: CGEventRef);
+    }
+
+    #[link(name = "CoreFoundation", kind = "framework")]
+    extern "C" {
         fn CFRelease(cf: *mut c_void);
     }
 
-    pub fn simulate_cmd_v() {
+    #[link(name = "ApplicationServices", kind = "framework")]
+    extern "C" {
+        fn AXIsProcessTrusted() -> bool;
+    }
+
+    /// Check if the process has accessibility (AX) trust.
+    pub fn is_accessibility_trusted() -> bool {
+        unsafe { AXIsProcessTrusted() }
+    }
+
+    /// Simulate Cmd+V via CoreGraphics CGEvent at HID level.
+    /// Requires accessibility permission.
+    pub fn cg_event_paste() -> bool {
         unsafe {
             let source = CGEventSourceCreate(K_CG_EVENT_SOURCE_STATE_HID);
             if source.is_null() {
                 eprintln!("[injector] CGEventSourceCreate failed");
-                return;
+                return false;
             }
 
             let key_down = CGEventCreateKeyboardEvent(source, K_VK_V, true);
             let key_up = CGEventCreateKeyboardEvent(source, K_VK_V, false);
+
+            if key_down.is_null() || key_up.is_null() {
+                eprintln!("[injector] CGEventCreateKeyboardEvent failed");
+                if !key_down.is_null() { CFRelease(key_down); }
+                if !key_up.is_null() { CFRelease(key_up); }
+                CFRelease(source);
+                return false;
+            }
 
             CGEventSetFlags(key_down, K_CG_EVENT_FLAG_COMMAND);
             CGEventSetFlags(key_up, K_CG_EVENT_FLAG_COMMAND);
@@ -47,19 +73,58 @@ mod cg_paste {
             CFRelease(key_up);
             CFRelease(source);
 
-            eprintln!("[injector] Paste keystroke sent via CGEvent (HID)");
+            eprintln!("[injector] Paste sent via CGEvent (HID)");
+            true
+        }
+    }
+
+    /// Fallback: Simulate Cmd+V via System Events (osascript).
+    /// System Events has implicit accessibility trust, so this works
+    /// even when FlashSpeech itself isn't in the Accessibility list.
+    pub fn osascript_paste() -> bool {
+        let result = Command::new("osascript")
+            .args([
+                "-e",
+                r#"tell application "System Events" to keystroke "v" using command down"#,
+            ])
+            .output();
+
+        match result {
+            Ok(output) if output.status.success() => {
+                eprintln!("[injector] Paste sent via osascript (System Events)");
+                true
+            }
+            Ok(output) => {
+                eprintln!(
+                    "[injector] osascript failed: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                false
+            }
+            Err(e) => {
+                eprintln!("[injector] osascript error: {}", e);
+                false
+            }
         }
     }
 }
-
-#[cfg(target_os = "macos")]
-use cg_paste::simulate_cmd_v;
 
 pub struct TextInjector;
 
 impl TextInjector {
     pub fn new() -> Self {
         Self
+    }
+
+    /// Check if accessibility permission is granted (macOS only).
+    #[cfg(target_os = "macos")]
+    pub fn check_accessibility(&self) -> bool {
+        let trusted = macos_paste::is_accessibility_trusted();
+        eprintln!(
+            "[injector] Accessibility trusted: {}",
+            if trusted { "YES" } else { "NO" }
+        );
+        trusted
     }
 
     #[cfg(target_os = "macos")]
@@ -93,8 +158,17 @@ impl TextInjector {
 
         std::thread::sleep(Duration::from_millis(50));
 
-        // Simulate Cmd+V via CoreGraphics CGEvent (HID level)
-        simulate_cmd_v();
+        // Simulate Cmd+V: try CGEvent first (fast), fall back to osascript
+        let pasted = if macos_paste::is_accessibility_trusted() {
+            macos_paste::cg_event_paste()
+        } else {
+            eprintln!("[injector] No accessibility permission, using osascript fallback");
+            macos_paste::osascript_paste()
+        };
+
+        if !pasted {
+            eprintln!("[injector] All paste methods failed");
+        }
 
         std::thread::sleep(Duration::from_millis(250));
 

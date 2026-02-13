@@ -130,10 +130,11 @@ fn do_toggle_recording(app: &AppHandle) {
                     match text {
                         Some(text) if !text.is_empty() => {
                             eprintln!("[result] {}", text);
-                            emit_state(&app_handle, "result", Some(text.clone()));
 
-                            // Inject text into active input
+                            // Inject text BEFORE updating HUD to avoid focus steal
                             state.injector.inject(&text);
+
+                            emit_state(&app_handle, "result", Some(text.clone()));
 
                             // Auto-reset to idle after display time
                             let display_time = (text.len() as f64 * 0.08).max(2.0);
@@ -241,6 +242,16 @@ fn initialize_backend(app_handle: AppHandle) {
                 let state = app_handle.state::<AppState>();
                 *state.recognizer.lock().unwrap() = Some(rec);
                 eprintln!("[init] SenseVoice model loaded successfully");
+
+                // Check accessibility permission for text injection
+                #[cfg(target_os = "macos")]
+                {
+                    let trusted = state.injector.check_accessibility();
+                    if !trusted {
+                        eprintln!("[init] WARNING: Accessibility permission not granted. Text injection will use osascript fallback.");
+                    }
+                }
+
                 emit_state(&app_handle, "idle", None);
             }
             Err(e) => {
