@@ -14,6 +14,8 @@ mod macos_paste {
     const K_CG_EVENT_SOURCE_STATE_HID: u32 = 1;
     const K_CG_EVENT_FLAG_COMMAND: u64 = 1 << 20;
     const K_VK_V: u16 = 9;
+    // Max characters per CGEvent Unicode string
+    const UNICODE_CHUNK_SIZE: usize = 20;
 
     #[link(name = "CoreGraphics", kind = "framework")]
     extern "C" {
@@ -25,6 +27,11 @@ mod macos_paste {
         ) -> CGEventRef;
         fn CGEventSetFlags(event: CGEventRef, flags: u64);
         fn CGEventPost(tap: u32, event: CGEventRef);
+        fn CGEventKeyboardSetUnicodeString(
+            event: CGEventRef,
+            string_length: u32,
+            unicode_string: *const u16,
+        );
     }
 
     #[link(name = "CoreFoundation", kind = "framework")]
@@ -42,9 +49,59 @@ mod macos_paste {
         unsafe { AXIsProcessTrusted() }
     }
 
-    /// Simulate Cmd+V via CoreGraphics CGEvent at HID level.
-    /// Requires accessibility permission.
-    pub fn cg_event_paste() -> bool {
+    /// Inject text by typing it directly via CGEvent Unicode string.
+    /// No clipboard needed. Sends text as keyboard input in chunks.
+    pub fn cg_event_type_text(text: &str) -> bool {
+        let utf16: Vec<u16> = text.encode_utf16().collect();
+        if utf16.is_empty() {
+            return true;
+        }
+
+        unsafe {
+            let source = CGEventSourceCreate(K_CG_EVENT_SOURCE_STATE_HID);
+            if source.is_null() {
+                eprintln!("[injector] CGEventSourceCreate failed");
+                return false;
+            }
+
+            for chunk in utf16.chunks(UNICODE_CHUNK_SIZE) {
+                let key_down = CGEventCreateKeyboardEvent(source, 0, true);
+                let key_up = CGEventCreateKeyboardEvent(source, 0, false);
+
+                if key_down.is_null() || key_up.is_null() {
+                    if !key_down.is_null() { CFRelease(key_down); }
+                    if !key_up.is_null() { CFRelease(key_up); }
+                    CFRelease(source);
+                    eprintln!("[injector] CGEventCreateKeyboardEvent failed");
+                    return false;
+                }
+
+                CGEventKeyboardSetUnicodeString(
+                    key_down,
+                    chunk.len() as u32,
+                    chunk.as_ptr(),
+                );
+
+                CGEventPost(K_CG_HID_EVENT_TAP, key_down);
+                CGEventPost(K_CG_HID_EVENT_TAP, key_up);
+
+                CFRelease(key_down);
+                CFRelease(key_up);
+
+                // Small delay between chunks to avoid input buffer overflow
+                if utf16.len() > UNICODE_CHUNK_SIZE {
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                }
+            }
+
+            CFRelease(source);
+            eprintln!("[injector] Text typed via CGEventKeyboardSetUnicodeString ({} chars)", utf16.len());
+            true
+        }
+    }
+
+    /// Simulate Cmd+V via CGEventPost to HID event tap (broadcast).
+    pub fn cg_event_paste_hid() -> bool {
         unsafe {
             let source = CGEventSourceCreate(K_CG_EVENT_SOURCE_STATE_HID);
             if source.is_null() {
@@ -67,31 +124,33 @@ mod macos_paste {
             CGEventSetFlags(key_up, K_CG_EVENT_FLAG_COMMAND);
 
             CGEventPost(K_CG_HID_EVENT_TAP, key_down);
+            std::thread::sleep(std::time::Duration::from_millis(20));
             CGEventPost(K_CG_HID_EVENT_TAP, key_up);
 
             CFRelease(key_down);
             CFRelease(key_up);
             CFRelease(source);
 
-            eprintln!("[injector] Paste sent via CGEvent (HID)");
+            eprintln!("[injector] Paste sent via CGEventPost (HID broadcast)");
             true
         }
     }
 
-    /// Fallback: Simulate Cmd+V via System Events (osascript).
-    /// System Events has implicit accessibility trust, so this works
-    /// even when FlashSpeech itself isn't in the Accessibility list.
+    /// Simulate Cmd+V via System Events (osascript). Fallback method.
     pub fn osascript_paste() -> bool {
         let result = Command::new("osascript")
             .args([
                 "-e",
-                r#"tell application "System Events" to keystroke "v" using command down"#,
+                r#"tell application "System Events"
+    set frontApp to first application process whose frontmost is true
+    tell frontApp to keystroke "v" using command down
+end tell"#,
             ])
             .output();
 
         match result {
             Ok(output) if output.status.success() => {
-                eprintln!("[injector] Paste sent via osascript (System Events)");
+                eprintln!("[injector] Paste sent via osascript");
                 true
             }
             Ok(output) => {
@@ -134,13 +193,19 @@ impl TextInjector {
         }
         eprintln!("[injector] Injecting text: {}", text);
 
-        // Save old clipboard
+        // Method 1: Direct Unicode typing via CGEvent (no clipboard needed)
+        if macos_paste::cg_event_type_text(text) {
+            return;
+        }
+
+        // Method 2: Clipboard + Cmd+V (fallback)
+        eprintln!("[injector] Unicode typing failed, falling back to clipboard+paste");
+
         let old_cb = Command::new("pbpaste")
             .output()
             .map(|o| o.stdout)
             .unwrap_or_default();
 
-        // Write text to clipboard
         let mut child = match Command::new("pbcopy")
             .stdin(std::process::Stdio::piped())
             .spawn()
@@ -155,24 +220,19 @@ impl TextInjector {
             let _ = stdin.write_all(text.as_bytes());
         }
         let _ = child.wait();
+        std::thread::sleep(Duration::from_millis(80));
 
-        std::thread::sleep(Duration::from_millis(50));
-
-        // Simulate Cmd+V: try CGEvent first (fast), fall back to osascript
         let pasted = if macos_paste::is_accessibility_trusted() {
-            macos_paste::cg_event_paste()
+            macos_paste::cg_event_paste_hid()
         } else {
-            eprintln!("[injector] No accessibility permission, using osascript fallback");
-            macos_paste::osascript_paste()
+            false
         };
-
-        if !pasted {
+        if !pasted && !macos_paste::osascript_paste() {
             eprintln!("[injector] All paste methods failed");
         }
 
-        std::thread::sleep(Duration::from_millis(250));
+        std::thread::sleep(Duration::from_millis(800));
 
-        // Restore old clipboard
         if let Ok(mut child) = Command::new("pbcopy")
             .stdin(std::process::Stdio::piped())
             .spawn()

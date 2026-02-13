@@ -1207,6 +1207,7 @@ version = "2.0.0"
 dependencies = [
  "cocoa",
  "cpal",
+ "libc",
  "objc",
  "reqwest",
  "serde",

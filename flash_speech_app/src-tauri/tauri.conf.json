@@ -20,7 +20,7 @@
     "bundle": {
       "active": true,
       "macOS": {
-        "entitlements": null,
+        "entitlements": "entitlements.plist",
         "exceptionDomain": "",
         "frameworks": [
           "Frameworks/libonnxruntime.1.17.1.dylib",

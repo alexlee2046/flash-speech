@@ -11,7 +11,7 @@
 - **极速识别** — SenseVoice 模型本地运行，转录延迟 ~70ms/10s 音频
 - **完全离线** — 模型首次下载后无需网络，隐私安全
 - **多语言** — 支持中文、英文、日语、韩语、粤语
-- **一键输入** — 识别结果自动粘贴到当前光标位置
+- **一键输入** — 识别结果通过 CGEvent Unicode 直接键入光标位置，不占用剪贴板
 - **轻量级** — 应用 ~50MB，无 Python 依赖，启动 < 2 秒
 - **Liquid Glass UI** — 借鉴 Apple Liquid Glass 设计语言，亮色半透明毛玻璃 HUD，支持状态形变动画
 - **macOS 原生体验** — 支持 macOS (Intel / Apple Silicon)，Windows / Linux 实验性支持
@@ -113,6 +113,23 @@ npm run tauri build
 
 构建产物位于 `flash_speech_app/src-tauri/target/release/bundle/`。
 
+### macOS 签名说明
+
+构建后安装到 `/Applications` 时，使用以下签名命令保持 TCC 权限稳定（避免每次重新构建后需要重新授权辅助功能）：
+
+```bash
+# 分层签名：dylib → binary → bundle
+codesign --force --sign - /Applications/FlashSpeech.app/Contents/Frameworks/*.dylib
+codesign --force --sign - --entitlements src-tauri/entitlements.plist \
+  --requirements '=designated => identifier "com.flashspeech.assistant"' \
+  /Applications/FlashSpeech.app/Contents/MacOS/FlashSpeech
+codesign --force --sign - --entitlements src-tauri/entitlements.plist \
+  --requirements '=designated => identifier "com.flashspeech.assistant"' \
+  /Applications/FlashSpeech.app
+```
+
+> 关键：`--requirements` 参数让 macOS TCC 通过 bundle identifier（而非 CDHash）识别应用，这样重新构建后无需重新授权辅助功能权限。
+
 ## 技术架构
 
 ```
@@ -127,7 +144,7 @@ npm run tauri build
 │  ┌─────────┐ ┌────────────┐ ┌─────────────────┐ │
 │  │  cpal   │ │ sherpa-rs  │ │   injector      │ │
 │  │ 音频录制 │ │ SenseVoice │ │ 文本注入         │ │
-│  │         │ │ ONNX 推理   │ │ (剪贴板+模拟按键)│ │
+│  │         │ │ ONNX 推理   │ │(CGEvent Unicode) │ │
 │  └─────────┘ └────────────┘ └─────────────────┘ │
 └──────────────────────────────────────────────────┘
 ```
@@ -183,9 +200,10 @@ flash_speech/
 ### 录音后没有输出文字？
 
 1. 确认麦克风权限已授予
-2. 确认辅助功能权限已授予（macOS）
+2. 确认辅助功能权限已授予（macOS）— 文本注入通过 `CGEventKeyboardSetUnicodeString` 直接键入，需要辅助功能权限
 3. 录音时长需超过 0.3 秒（防误触设计）
 4. 确保光标在可输入的文本框中
+5. 如果从源码重新构建，签名时需指定 `--requirements` 参数保持 TCC 权限稳定（详见构建说明）
 
 ### macOS 提示"已损坏，无法打开"？
 

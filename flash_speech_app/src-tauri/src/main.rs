@@ -267,6 +267,21 @@ fn initialize_backend(app_handle: AppHandle) {
 }
 
 fn main() {
+    // Redirect stderr to log file for GUI launch debugging
+    {
+        use std::fs::OpenOptions;
+        use std::os::unix::io::IntoRawFd;
+        if let Ok(file) = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("/tmp/flashspeech.log")
+        {
+            let fd = file.into_raw_fd();
+            unsafe { libc::dup2(fd, 2); }
+        }
+    }
+    eprintln!("\n=== FlashSpeech started at {:?} ===", std::time::SystemTime::now());
+
     let quit = CustomMenuItem::new("quit".to_string(), "Quit FlashSpeech");
     let toggle = CustomMenuItem::new("toggle".to_string(), "Show/Hide HUD");
 
@@ -344,9 +359,12 @@ fn main() {
 
                 let ns_window = window.ns_window().unwrap() as id;
                 unsafe {
+                    use objc::{msg_send, sel, sel_impl};
                     ns_window.setHasShadow_(NO);
                     ns_window.setOpaque_(NO);
                     ns_window.setBackgroundColor_(NSColor::clearColor(nil));
+                    // Floating panel level (above normal windows)
+                    let _: () = msg_send![ns_window, setLevel: 3i64];
                 }
 
                 window
