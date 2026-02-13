@@ -21,15 +21,24 @@
 
 从 [Releases](https://github.com/alexlee2046/flash-speech/releases) 页面下载对应平台的安装包：
 
-| 平台 | 文件 |
-|------|------|
-| macOS (Apple Silicon) | `FlashSpeech_x.x.x_aarch64.dmg` |
-| macOS (Intel) | `FlashSpeech_x.x.x_x64.dmg` |
-| Windows | `FlashSpeech_x.x.x_x64-setup.exe` |
-| Linux (Debian/Ubuntu) | `flash-speech_x.x.x_amd64.deb` |
-| Linux (通用) | `flash-speech_x.x.x_amd64.AppImage` |
+| 平台 | 标准版（首次联网下载模型） | 完整版（含模型，开箱即用） |
+|------|------|------|
+| macOS (Apple Silicon) | `FlashSpeech_x.x.x_aarch64.dmg` | `FlashSpeech_x.x.x_aarch64_with-model.dmg` |
+| macOS (Intel) | `FlashSpeech_x.x.x_x86_64.dmg` | `FlashSpeech_x.x.x_x86_64_with-model.dmg` |
+| Windows | `FlashSpeech_x.x.x_x64-setup.exe` | — |
+| Linux (Debian/Ubuntu) | `flash-speech_x.x.x_amd64.deb` | — |
 
-> 首次启动会自动从 HuggingFace 下载语音模型（~100MB），之后完全离线。
+> 标准版首次启动会自动从 HuggingFace 下载语音模型（~228MB），之后完全离线。网络不便的用户建议下载完整版。
+
+### macOS 安装说明
+
+由于应用未经 Apple 签名，macOS 会阻止打开。安装后需要在终端运行一次以下命令：
+
+```bash
+xattr -cr /Applications/FlashSpeech.app
+```
+
+然后正常双击打开即可。
 
 ### macOS 权限设置
 
@@ -177,9 +186,15 @@ flash_speech/
 3. 录音时长需超过 0.3 秒（防误触设计）
 4. 确保光标在可输入的文本框中
 
-### macOS 提示"无法验证开发者"？
+### macOS 提示"已损坏，无法打开"？
 
-右键点击应用 → 打开，或在 **系统设置 → 隐私与安全性** 中点击"仍要打开"。
+这是因为应用未经 Apple 签名。打开终端运行：
+
+```bash
+xattr -cr /Applications/FlashSpeech.app
+```
+
+然后重新打开应用即可。如果提示"无法验证开发者"，右键点击应用 → 打开，或在 **系统设置 → 隐私与安全性** 中点击"仍要打开"。
 
 ### Linux 下文字无法自动输入？
 
