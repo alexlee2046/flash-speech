@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/tauri';
 import { appWindow, LogicalSize, LogicalPosition, currentMonitor } from '@tauri-apps/api/window';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -9,7 +9,7 @@ interface HUDProps {
     text?: string;
 }
 
-const spring = { type: "spring" as const, stiffness: 500, damping: 32 };
+const spring = { type: "spring" as const, stiffness: 400, damping: 28 };
 const fade = {
     initial: { opacity: 0 },
     animate: { opacity: 1 },
@@ -17,17 +17,29 @@ const fade = {
     transition: { duration: 0.15 },
 };
 
-const PILL_H = 48;
+const PILL_H = 44;
 const PAD = 16;
-const MENU_PILL_W = 170; // pill width when showing inline menu
+const MENU_PILL_W = 160;
 
 export function HUD({ state, text }: HUDProps) {
     const [menuOpen, setMenuOpen] = useState(false);
+    const [ripple, setRipple] = useState<{ x: number; y: number; id: number } | null>(null);
+    const [flash, setFlash] = useState(false);
+    const prevState = useRef(state);
 
     const displayText = text && text.length > 100 ? text.slice(0, 100) + '\u2026' : text;
 
+    // Flash on state transitions
+    useEffect(() => {
+        if (prevState.current !== state) {
+            prevState.current = state;
+            setFlash(true);
+            const t = setTimeout(() => setFlash(false), 150);
+            return () => clearTimeout(t);
+        }
+    }, [state]);
+
     // Auto-close menu when state transitions to an active phase
-    // (e.g., user presses shortcut while menu is open)
     useEffect(() => {
         if (menuOpen && (state === 'listening' || state === 'processing' || state === 'exiting')) {
             setMenuOpen(false);
@@ -35,19 +47,19 @@ export function HUD({ state, text }: HUDProps) {
     }, [state, menuOpen]);
 
     const pillWidth = menuOpen ? MENU_PILL_W
-        : state === 'idle' || state === 'disconnected' ? 48
-        : state === 'starting' ? 160
-        : state === 'listening' ? 220
-        : state === 'processing' ? 170
-        : state === 'error' ? 200
-        : state === 'exiting' ? 100
-        : state === 'result' ? Math.min(Math.max(180, (displayText?.length || 0) * 11 + 70), 440)
-        : 48;
+        : state === 'idle' || state === 'disconnected' ? 44
+        : state === 'starting' ? 140
+        : state === 'listening' ? 200
+        : state === 'processing' ? 160
+        : state === 'error' ? 180
+        : state === 'exiting' ? 80
+        : state === 'result' ? Math.min(Math.max(180, (displayText?.length || 0) * 11 + 70), 420)
+        : 44;
 
-    // --- Dynamic window sizing (width only, height constant) ---
+    // --- Dynamic window sizing ---
     const initRef = useRef(false);
     const prevW = useRef(pillWidth);
-    const resizeId = useRef(0); // monotonic counter to cancel stale async resizes
+    const resizeId = useRef(0);
 
     useEffect(() => {
         const w = pillWidth + PAD;
@@ -60,7 +72,7 @@ export function HUD({ state, text }: HUDProps) {
         const id = ++resizeId.current;
 
         const timer = setTimeout(async () => {
-            if (resizeId.current !== id) return; // superseded by a newer resize
+            if (resizeId.current !== id) return;
             try {
                 if (!initRef.current) {
                     initRef.current = true;
@@ -82,7 +94,7 @@ export function HUD({ state, text }: HUDProps) {
                         appWindow.outerSize(),
                         appWindow.scaleFactor(),
                     ]);
-                    if (resizeId.current !== id) return; // superseded
+                    if (resizeId.current !== id) return;
                     const oldW = size.width / sf;
                     const oldX = pos.x / sf;
                     const oldY = pos.y / sf;
@@ -106,7 +118,6 @@ export function HUD({ state, text }: HUDProps) {
     const menuRef = useRef(menuOpen);
     menuRef.current = menuOpen;
 
-    // Track active drag listeners for cleanup on unmount
     const dragCleanupRef = useRef<(() => void) | null>(null);
 
     useEffect(() => {
@@ -120,10 +131,7 @@ export function HUD({ state, text }: HUDProps) {
             return;
         }
 
-        // Don't call startDragging() immediately — wait for actual mouse movement.
-        // Immediate startDragging() captures the mouse and swallows contextmenu
-        // events, which breaks trackpad two-finger right-click.
-        dragCleanupRef.current?.(); // cancel any previous drag session
+        dragCleanupRef.current?.();
         const sx = e.screenX, sy = e.screenY;
         const onMove = (ev: MouseEvent) => {
             if (Math.abs(ev.screenX - sx) > 3 || Math.abs(ev.screenY - sy) > 3) {
@@ -149,13 +157,22 @@ export function HUD({ state, text }: HUDProps) {
         return () => clearTimeout(t);
     }, [menuOpen]);
 
-    const handleContextMenu = (e: React.MouseEvent) => {
+    const handleContextMenu = useCallback((e: React.MouseEvent) => {
         e.preventDefault();
+        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        setRipple({ x: e.clientX - rect.left, y: e.clientY - rect.top, id: Date.now() });
         setMenuOpen(prev => !prev);
-    };
+    }, []);
+
+    // Clear ripple after animation
+    useEffect(() => {
+        if (!ripple) return;
+        const t = setTimeout(() => setRipple(null), 300);
+        return () => clearTimeout(t);
+    }, [ripple]);
 
     const handleQuit = (e: React.MouseEvent) => {
-        if (e.button !== 0) return; // only left click triggers quit
+        if (e.button !== 0) return;
         e.stopPropagation();
         setMenuOpen(false);
         invoke('quit_app').catch(console.error);
@@ -164,22 +181,41 @@ export function HUD({ state, text }: HUDProps) {
     return (
         <div onMouseDown={handleMouseDown} onContextMenu={handleContextMenu}>
             <motion.div
-                animate={{ width: pillWidth, borderRadius: 24 }}
+                animate={{ width: pillWidth, borderRadius: 22 }}
                 transition={spring}
-                className="glass-pill h-12 flex items-center justify-center overflow-hidden cursor-default select-none"
-                style={{ minWidth: 48 }}
+                className="liquid-glass h-[44px] flex items-center justify-center cursor-default select-none"
+                style={{ minWidth: 44 }}
             >
+                {/* Highlight layer */}
+                <div className="liquid-glass-highlight" />
+
+                {/* Rim light layer */}
+                <div className={`liquid-glass-rim ${state === 'listening' ? 'listening' : ''}`} />
+
+                {/* Flash layer */}
+                <div className={`liquid-glass-flash ${flash ? 'active' : ''}`} />
+
+                {/* Ripple layer */}
+                {ripple && (
+                    <div
+                        key={ripple.id}
+                        className="liquid-glass-ripple active"
+                        style={{ left: ripple.x, top: ripple.y }}
+                    />
+                )}
+
+                {/* Content layer */}
                 <AnimatePresence mode="wait">
                     {/* INLINE MENU */}
                     {menuOpen && (
                         <motion.div key="menu" {...fade}
-                            className="flex items-center px-4 w-full"
+                            className="relative z-10 flex items-center px-4 w-full"
                             onMouseDown={(e) => e.stopPropagation()}
                             onContextMenu={(e) => e.stopPropagation()}
                         >
                             <button
                                 onMouseDown={handleQuit}
-                                className="text-xs text-rose-400 hover:text-rose-300 flex items-center gap-2"
+                                className="text-xs text-rose-600 hover:text-rose-500 flex items-center gap-2 transition-colors"
                             >
                                 <Power className="w-3.5 h-3.5" />
                                 退出 FlashSpeech
@@ -189,9 +225,9 @@ export function HUD({ state, text }: HUDProps) {
 
                     {/* IDLE */}
                     {!menuOpen && state === 'idle' && (
-                        <motion.div key="idle" {...fade}>
+                        <motion.div key="idle" {...fade} className="relative z-10">
                             <motion.div
-                                className="w-2.5 h-2.5 rounded-full bg-white/80"
+                                className="w-2.5 h-2.5 rounded-full bg-gray-800/60"
                                 animate={{ opacity: [0.4, 0.9, 0.4], scale: [0.85, 1, 0.85] }}
                                 transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
                             />
@@ -201,9 +237,9 @@ export function HUD({ state, text }: HUDProps) {
                     {/* STARTING */}
                     {!menuOpen && state === 'starting' && (
                         <motion.div key="starting" {...fade}
-                            className="flex items-center gap-2.5 px-4 text-white/60 text-xs tracking-wide"
+                            className="relative z-10 flex items-center gap-2.5 px-4 text-gray-600 text-xs tracking-wide"
                         >
-                            <motion.div className="w-1.5 h-1.5 rounded-full bg-white/50"
+                            <motion.div className="w-1.5 h-1.5 rounded-full bg-gray-500"
                                 animate={{ opacity: [0.3, 1, 0.3] }}
                                 transition={{ duration: 1.2, repeat: Infinity }}
                             />
@@ -214,9 +250,9 @@ export function HUD({ state, text }: HUDProps) {
                     {/* LISTENING */}
                     {!menuOpen && state === 'listening' && (
                         <motion.div key="listening" {...fade}
-                            className="flex items-center gap-3 px-4"
+                            className="relative z-10 flex items-center gap-3 px-4"
                         >
-                            <motion.div className="w-2 h-2 rounded-full bg-red-400 shrink-0"
+                            <motion.div className="w-2 h-2 rounded-full bg-red-500 shrink-0"
                                 animate={{ opacity: [1, 0.4, 1], scale: [1, 0.8, 1] }}
                                 transition={{ duration: 1, repeat: Infinity }}
                             />
@@ -224,7 +260,7 @@ export function HUD({ state, text }: HUDProps) {
                                 {Array.from({ length: 8 }, (_, i) => (
                                     <motion.div
                                         key={i}
-                                        className="w-[3px] rounded-full bg-white/70"
+                                        className="w-[3px] rounded-full bg-gray-700/70"
                                         animate={{ height: [3, 8 + Math.random() * 12, 3] }}
                                         transition={{
                                             repeat: Infinity,
@@ -241,12 +277,12 @@ export function HUD({ state, text }: HUDProps) {
                     {/* PROCESSING */}
                     {!menuOpen && state === 'processing' && (
                         <motion.div key="processing" {...fade}
-                            className="flex items-center gap-2.5 px-4 text-white/60 text-xs tracking-wide"
+                            className="relative z-10 flex items-center gap-2.5 px-4 text-gray-600 text-xs tracking-wide"
                         >
                             <motion.div
                                 animate={{ rotate: 360 }}
                                 transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                                className="w-4 h-4 border-2 border-white/20 border-t-white/70 rounded-full"
+                                className="w-4 h-4 border-2 border-gray-400/30 border-t-gray-700/80 rounded-full"
                             />
                             <span>识别中</span>
                         </motion.div>
@@ -255,10 +291,10 @@ export function HUD({ state, text }: HUDProps) {
                     {/* RESULT */}
                     {!menuOpen && state === 'result' && displayText && (
                         <motion.div key="result" {...fade}
-                            className="flex items-center gap-2 px-4 w-full"
+                            className="relative z-10 flex items-center gap-2 px-4 w-full"
                         >
-                            <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                            <span className="text-white/90 text-[13px] leading-tight truncate">
+                            <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                            <span className="text-gray-800/90 text-[13px] leading-tight truncate">
                                 {displayText}
                             </span>
                         </motion.div>
@@ -267,7 +303,7 @@ export function HUD({ state, text }: HUDProps) {
                     {/* ERROR */}
                     {!menuOpen && state === 'error' && (
                         <motion.div key="error" {...fade}
-                            className="flex items-center gap-2 px-4 text-amber-400/80 text-xs"
+                            className="relative z-10 flex items-center gap-2 px-4 text-amber-600 text-xs"
                         >
                             <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
                             <span>识别失败</span>
@@ -276,15 +312,15 @@ export function HUD({ state, text }: HUDProps) {
 
                     {/* DISCONNECTED */}
                     {!menuOpen && state === 'disconnected' && (
-                        <motion.div key="disconnected" {...fade}>
-                            <div className="w-2.5 h-2.5 rounded-full bg-red-400/60" />
+                        <motion.div key="disconnected" {...fade} className="relative z-10">
+                            <div className="w-2.5 h-2.5 rounded-full bg-red-500/50" />
                         </motion.div>
                     )}
 
                     {/* EXITING */}
                     {!menuOpen && state === 'exiting' && (
                         <motion.div key="exiting" {...fade}
-                            className="text-white/50 text-xs"
+                            className="relative z-10 text-gray-500 text-xs"
                         >
                             再见
                         </motion.div>
