@@ -11,15 +11,50 @@ interface HUDProps {
 
 const spring = { type: "spring" as const, stiffness: 400, damping: 28 };
 const fade = {
-    initial: { opacity: 0 },
-    animate: { opacity: 1 },
-    exit: { opacity: 0 },
-    transition: { duration: 0.15 },
+    initial: { opacity: 0, scale: 0.96 },
+    animate: { opacity: 1, scale: 1 },
+    exit: { opacity: 0, scale: 0.96 },
+    transition: { duration: 0.18, ease: [0.22, 1, 0.36, 1] },
 };
 
 const PILL_H = 44;
 const PAD = 16;
 const MENU_PILL_W = 160;
+
+/**
+ * SVG Filter 定义 — 微妙的光学折射扭曲
+ */
+function LiquidGlassFilters() {
+    return (
+        <svg width="0" height="0" style={{ position: 'absolute' }}>
+            <defs>
+                <filter id="liquid-refraction" x="-5%" y="-5%" width="110%" height="110%">
+                    <feTurbulence
+                        type="fractalNoise"
+                        baseFrequency="0.015"
+                        numOctaves="3"
+                        seed="2"
+                        result="noise"
+                    />
+                    <feGaussianBlur in="noise" stdDeviation="3" result="smoothNoise" />
+                    <feDisplacementMap
+                        in="SourceGraphic"
+                        in2="smoothNoise"
+                        scale="2"
+                        xChannelSelector="R"
+                        yChannelSelector="G"
+                    />
+                </filter>
+            </defs>
+        </svg>
+    );
+}
+
+/* 使用 CSS 变量的颜色类名 — 自动适配亮色/暗色模式 */
+const textStyle = { color: 'var(--glass-text)' } as React.CSSProperties;
+const textSecondaryStyle = { color: 'var(--glass-text-secondary)' } as React.CSSProperties;
+const dotStyle = { background: 'var(--glass-dot)' } as React.CSSProperties;
+const barStyle = { background: 'var(--glass-bar)' } as React.CSSProperties;
 
 export function HUD({ state, text }: HUDProps) {
     const [menuOpen, setMenuOpen] = useState(false);
@@ -29,11 +64,11 @@ export function HUD({ state, text }: HUDProps) {
 
     const displayText = text && text.length > 100 ? text.slice(0, 100) + '\u2026' : text;
 
-    // Highlight rotation (8s cycle) — JS-driven for WKWebView compat
+    // ── 高光旋转 (10s 周期) ──
     const highlightAngle = useMotionValue(135);
     useEffect(() => {
         const controls = animate(highlightAngle, 135 + 360, {
-            duration: 8,
+            duration: 10,
             repeat: Infinity,
             ease: "linear",
         });
@@ -41,10 +76,10 @@ export function HUD({ state, text }: HUDProps) {
     }, []);
 
     const highlightBg = useTransform(highlightAngle, (v) =>
-        `linear-gradient(${v}deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.08) 50%, transparent 100%)`
+        `linear-gradient(${v}deg, var(--glass-highlight-top) 0%, rgba(255,255,255,0.08) 35%, transparent 60%)`
     );
 
-    // Rim rotation (6s cycle, 3s when listening) — JS-driven for WKWebView compat
+    // ── 边框光环旋转 ──
     const rimAngle = useMotionValue(0);
     const rimDuration = useRef(6);
     const rimControls = useRef<{ stop: () => void } | null>(null);
@@ -74,11 +109,11 @@ export function HUD({ state, text }: HUDProps) {
 
     const rimBg = useTransform(rimAngle, (v) =>
         state === 'listening'
-            ? `conic-gradient(from ${v}deg, rgba(255,80,80,0.6), rgba(255,120,100,0.5), rgba(255,80,80,0.6), rgba(255,60,60,0.5), rgba(255,80,80,0.6))`
-            : `conic-gradient(from ${v}deg, rgba(255,120,120,0.4), rgba(255,200,100,0.4), rgba(100,255,150,0.4), rgba(100,180,255,0.4), rgba(200,130,255,0.4), rgba(255,120,120,0.4))`
+            ? `conic-gradient(from ${v}deg, rgba(255,80,80,0.65), rgba(255,130,110,0.5), rgba(255,80,80,0.65), rgba(255,60,60,0.5), rgba(255,80,80,0.65))`
+            : `conic-gradient(from ${v}deg, rgba(255,255,255,0.25), rgba(200,220,255,0.2), rgba(255,200,180,0.18), rgba(200,255,220,0.18), rgba(180,200,255,0.2), rgba(255,255,255,0.25))`
     );
 
-    // Flash on state transitions
+    // ── 状态过渡闪光 ──
     useEffect(() => {
         if (prevState.current !== state) {
             prevState.current = state;
@@ -88,7 +123,6 @@ export function HUD({ state, text }: HUDProps) {
         }
     }, [state]);
 
-    // Auto-close menu when state transitions to an active phase
     useEffect(() => {
         if (menuOpen && (state === 'listening' || state === 'processing' || state === 'exiting')) {
             setMenuOpen(false);
@@ -97,15 +131,15 @@ export function HUD({ state, text }: HUDProps) {
 
     const pillWidth = menuOpen ? MENU_PILL_W
         : state === 'idle' || state === 'disconnected' ? 44
-        : state === 'starting' ? 140
-        : state === 'listening' ? 200
-        : state === 'processing' ? 160
-        : state === 'error' ? 180
-        : state === 'exiting' ? 80
-        : state === 'result' ? Math.min(Math.max(180, (displayText?.length || 0) * 11 + 70), 420)
-        : 44;
+            : state === 'starting' ? 140
+                : state === 'listening' ? 200
+                    : state === 'processing' ? 160
+                        : state === 'error' ? 180
+                            : state === 'exiting' ? 80
+                                : state === 'result' ? Math.min(Math.max(180, (displayText?.length || 0) * 11 + 70), 420)
+                                    : 44;
 
-    // --- Dynamic window sizing ---
+    // ── 动态窗口大小调整 ──
     const initRef = useRef(false);
     const prevW = useRef(pillWidth);
     const resizeId = useRef(0);
@@ -113,11 +147,9 @@ export function HUD({ state, text }: HUDProps) {
     useEffect(() => {
         const w = pillWidth + PAD;
         const h = PILL_H + PAD;
-
         const was = prevW.current;
         prevW.current = pillWidth;
         const delay = pillWidth < was ? 250 : 0;
-
         const id = ++resizeId.current;
 
         const timer = setTimeout(async () => {
@@ -163,10 +195,9 @@ export function HUD({ state, text }: HUDProps) {
         return () => clearTimeout(timer);
     }, [pillWidth]);
 
-    // --- Mouse handling ---
+    // ── 鼠标交互 ──
     const menuRef = useRef(menuOpen);
     menuRef.current = menuOpen;
-
     const dragCleanupRef = useRef<(() => void) | null>(null);
 
     useEffect(() => {
@@ -175,10 +206,7 @@ export function HUD({ state, text }: HUDProps) {
 
     const handleMouseDown = (e: React.MouseEvent) => {
         if (e.button !== 0) return;
-        if (menuRef.current) {
-            setMenuOpen(false);
-            return;
-        }
+        if (menuRef.current) { setMenuOpen(false); return; }
 
         dragCleanupRef.current?.();
         const sx = e.screenX, sy = e.screenY;
@@ -199,7 +227,6 @@ export function HUD({ state, text }: HUDProps) {
         document.addEventListener('mouseup', onUp);
     };
 
-    // Auto-close menu after 3s
     useEffect(() => {
         if (!menuOpen) return;
         const t = setTimeout(() => setMenuOpen(false), 3000);
@@ -213,10 +240,9 @@ export function HUD({ state, text }: HUDProps) {
         setMenuOpen(prev => !prev);
     }, []);
 
-    // Clear ripple after animation
     useEffect(() => {
         if (!ripple) return;
-        const t = setTimeout(() => setRipple(null), 300);
+        const t = setTimeout(() => setRipple(null), 350);
         return () => clearTimeout(t);
     }, [ripple]);
 
@@ -229,33 +255,41 @@ export function HUD({ state, text }: HUDProps) {
 
     return (
         <div onMouseDown={handleMouseDown} onContextMenu={handleContextMenu}>
+            <LiquidGlassFilters />
+
             <motion.div
                 animate={{ width: pillWidth, borderRadius: 22 }}
                 transition={spring}
                 className="liquid-glass h-[44px] flex items-center justify-center cursor-default select-none"
                 style={{ minWidth: 44 }}
             >
-                {/* Highlight layer */}
+                {/* 高光扫过层 */}
                 <motion.div className="liquid-glass-highlight" style={{ background: highlightBg }} />
 
-                {/* Rim light layer */}
-                <motion.div className={`liquid-glass-rim ${state === 'listening' ? 'listening' : ''}`} style={{ background: rimBg }} />
+                {/* 折射模拟层 */}
+                <div className="liquid-glass-refraction" />
 
-                {/* Flash layer */}
+                {/* 噪点纹理层 */}
+                <div className="liquid-glass-noise" />
+
+                {/* 边框光环层 */}
+                <motion.div
+                    className={`liquid-glass-rim ${state === 'listening' ? 'listening' : ''}`}
+                    style={{ background: rimBg }}
+                />
+
+                {/* 闪光层 */}
                 <div className={`liquid-glass-flash ${flash ? 'active' : ''}`} />
 
-                {/* Ripple layer */}
+                {/* 涟漪层 */}
                 {ripple && (
-                    <div
-                        key={ripple.id}
-                        className="liquid-glass-ripple active"
-                        style={{ left: ripple.x, top: ripple.y }}
-                    />
+                    <div key={ripple.id} className="liquid-glass-ripple active"
+                        style={{ left: ripple.x, top: ripple.y }} />
                 )}
 
-                {/* Content layer */}
+                {/* ── 内容层 — 使用 CSS 变量颜色自适应暗色模式 ── */}
                 <AnimatePresence mode="wait">
-                    {/* INLINE MENU */}
+                    {/* 菜单 */}
                     {menuOpen && (
                         <motion.div key="menu" {...fade}
                             className="relative z-10 flex items-center px-4 w-full"
@@ -264,7 +298,8 @@ export function HUD({ state, text }: HUDProps) {
                         >
                             <button
                                 onMouseDown={handleQuit}
-                                className="text-xs text-rose-600 hover:text-rose-500 flex items-center gap-2 transition-colors"
+                                className="text-xs flex items-center gap-2 transition-colors"
+                                style={{ color: 'rgba(255,80,80,0.9)' }}
                             >
                                 <Power className="w-3.5 h-3.5" />
                                 退出 FlashSpeech
@@ -272,23 +307,26 @@ export function HUD({ state, text }: HUDProps) {
                         </motion.div>
                     )}
 
-                    {/* IDLE */}
+                    {/* 空闲 */}
                     {!menuOpen && state === 'idle' && (
                         <motion.div key="idle" {...fade} className="relative z-10">
                             <motion.div
-                                className="w-2.5 h-2.5 rounded-full bg-gray-800/60"
+                                className="w-2.5 h-2.5 rounded-full"
+                                style={dotStyle}
                                 animate={{ opacity: [0.4, 0.9, 0.4], scale: [0.85, 1, 0.85] }}
                                 transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
                             />
                         </motion.div>
                     )}
 
-                    {/* STARTING */}
+                    {/* 启动中 */}
                     {!menuOpen && state === 'starting' && (
                         <motion.div key="starting" {...fade}
-                            className="relative z-10 flex items-center gap-2.5 px-4 text-gray-600 text-xs tracking-wide"
+                            className="relative z-10 flex items-center gap-2.5 px-4 text-xs tracking-wide"
+                            style={textSecondaryStyle}
                         >
-                            <motion.div className="w-1.5 h-1.5 rounded-full bg-gray-500"
+                            <motion.div className="w-1.5 h-1.5 rounded-full"
+                                style={dotStyle}
                                 animate={{ opacity: [0.3, 1, 0.3] }}
                                 transition={{ duration: 1.2, repeat: Infinity }}
                             />
@@ -296,7 +334,7 @@ export function HUD({ state, text }: HUDProps) {
                         </motion.div>
                     )}
 
-                    {/* LISTENING */}
+                    {/* 监听中 */}
                     {!menuOpen && state === 'listening' && (
                         <motion.div key="listening" {...fade}
                             className="relative z-10 flex items-center gap-3 px-4"
@@ -309,7 +347,8 @@ export function HUD({ state, text }: HUDProps) {
                                 {Array.from({ length: 8 }, (_, i) => (
                                     <motion.div
                                         key={i}
-                                        className="w-[3px] rounded-full bg-gray-700/70"
+                                        className="w-[3px] rounded-full"
+                                        style={barStyle}
                                         animate={{ height: [3, 8 + Math.random() * 12, 3] }}
                                         transition={{
                                             repeat: Infinity,
@@ -323,53 +362,60 @@ export function HUD({ state, text }: HUDProps) {
                         </motion.div>
                     )}
 
-                    {/* PROCESSING */}
+                    {/* 处理中 */}
                     {!menuOpen && state === 'processing' && (
                         <motion.div key="processing" {...fade}
-                            className="relative z-10 flex items-center gap-2.5 px-4 text-gray-600 text-xs tracking-wide"
+                            className="relative z-10 flex items-center gap-2.5 px-4 text-xs tracking-wide"
+                            style={textSecondaryStyle}
                         >
                             <motion.div
                                 animate={{ rotate: 360 }}
                                 transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                                className="w-4 h-4 border-2 border-gray-400/30 border-t-gray-700/80 rounded-full"
+                                className="w-4 h-4 rounded-full"
+                                style={{
+                                    border: '2px solid var(--glass-highlight-inner)',
+                                    borderTopColor: 'var(--glass-text)',
+                                }}
                             />
                             <span>识别中</span>
                         </motion.div>
                     )}
 
-                    {/* RESULT */}
+                    {/* 结果 */}
                     {!menuOpen && state === 'result' && displayText && (
                         <motion.div key="result" {...fade}
                             className="relative z-10 flex items-center gap-2 px-4 w-full"
                         >
-                            <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                            <span className="text-gray-800/90 text-[13px] leading-tight truncate">
+                            <Check className="w-3.5 h-3.5 shrink-0" style={{ color: '#34d399' }} />
+                            <span className="text-[13px] leading-tight truncate" style={textStyle}>
                                 {displayText}
                             </span>
                         </motion.div>
                     )}
 
-                    {/* ERROR */}
+                    {/* 错误 */}
                     {!menuOpen && state === 'error' && (
                         <motion.div key="error" {...fade}
-                            className="relative z-10 flex items-center gap-2 px-4 text-amber-600 text-xs"
+                            className="relative z-10 flex items-center gap-2 px-4 text-xs"
+                            style={{ color: '#fbbf24' }}
                         >
                             <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
                             <span>识别失败</span>
                         </motion.div>
                     )}
 
-                    {/* DISCONNECTED */}
+                    {/* 断开连接 */}
                     {!menuOpen && state === 'disconnected' && (
                         <motion.div key="disconnected" {...fade} className="relative z-10">
                             <div className="w-2.5 h-2.5 rounded-full bg-red-500/50" />
                         </motion.div>
                     )}
 
-                    {/* EXITING */}
+                    {/* 退出中 */}
                     {!menuOpen && state === 'exiting' && (
                         <motion.div key="exiting" {...fade}
-                            className="relative z-10 text-gray-500 text-xs"
+                            className="relative z-10 text-xs"
+                            style={textSecondaryStyle}
                         >
                             再见
                         </motion.div>

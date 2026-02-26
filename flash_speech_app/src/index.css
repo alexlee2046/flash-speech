@@ -2,13 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
-html, body, #root {
+html,
+body,
+#root {
   background: transparent !important;
   margin: 0;
   padding: 0;
   overflow: hidden;
-  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Helvetica Neue', sans-serif;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 #root {
@@ -19,80 +22,226 @@ html, body, #root {
   justify-content: center;
 }
 
-/* ── Liquid Glass Material ── */
-.liquid-glass {
-  position: relative;
-  background: rgba(255, 255, 255, 0.18);
-  backdrop-filter: blur(40px) saturate(200%) brightness(108%);
-  -webkit-backdrop-filter: blur(40px) saturate(200%) brightness(108%);
-  border: 0.5px solid rgba(255, 255, 255, 0.35);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.4),
-    inset 0 -0.5px 0 rgba(0, 0, 0, 0.04),
-    0 0.5px 1px rgba(0, 0, 0, 0.06),
-    0 4px 16px rgba(0, 0, 0, 0.05),
-    0 8px 32px rgba(0, 0, 0, 0.03);
-  overflow: hidden;
+/* ═══════════════════════════════════════════════════════
+   Apple Liquid Glass Material — 自适应亮色/暗色模式
+   参考 iOS 26 / macOS Tahoe Control Center 原生效果
+   ═══════════════════════════════════════════════════════ */
+
+/* ── CSS 变量：亮色模式（默认） ── */
+:root {
+  /* 玻璃基底色 */
+  --glass-bg-start: rgba(255, 255, 255, 0.32);
+  --glass-bg-mid: rgba(255, 255, 255, 0.15);
+  --glass-bg-end: rgba(255, 255, 255, 0.08);
+
+  /* 边框 */
+  --glass-border: rgba(255, 255, 255, 0.35);
+
+  /* 内部高光 */
+  --glass-highlight-top: rgba(255, 255, 255, 0.55);
+  --glass-highlight-inner: rgba(255, 255, 255, 0.1);
+  --glass-shadow-bottom: rgba(0, 0, 0, 0.06);
+
+  /* 外阴影 */
+  --glass-shadow-near: rgba(0, 0, 0, 0.1);
+  --glass-shadow-mid: rgba(0, 0, 0, 0.06);
+  --glass-shadow-far: rgba(0, 0, 0, 0.08);
+  --glass-shadow-ambient: rgba(0, 0, 0, 0.04);
+
+  /* 文字颜色 */
+  --glass-text: rgba(0, 0, 0, 0.75);
+  --glass-text-secondary: rgba(0, 0, 0, 0.55);
+  --glass-dot: rgba(0, 0, 0, 0.6);
+  --glass-bar: rgba(0, 0, 0, 0.65);
+
+  /* 折射色散 */
+  --glass-refract-cool: rgba(180, 210, 255, 0.06);
+  --glass-refract-warm: rgba(255, 200, 180, 0.04);
+
+  /* 闪光 */
+  --glass-flash: rgba(255, 255, 255, 0.22);
+  --glass-ripple: rgba(255, 255, 255, 0.7);
+  --glass-ripple-mid: rgba(255, 255, 255, 0.2);
 }
 
-/* ── Highlight Layer: rotating light sweep ── */
+/* ── CSS 变量：暗色模式 ── */
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* 暗色玻璃基底 — 深色半透明基底，参考 macOS Control Center */
+    --glass-bg-start: rgba(0, 0, 0, 0.35);
+    --glass-bg-mid: rgba(0, 0, 0, 0.45);
+    --glass-bg-end: rgba(0, 0, 0, 0.55);
+
+    /* 边框 — 微弱白色描边增加可见度 */
+    --glass-border: rgba(255, 255, 255, 0.12);
+
+    /* 内部高光 — 顶部微弱白光模拟光源 */
+    --glass-highlight-top: rgba(255, 255, 255, 0.15);
+    --glass-highlight-inner: rgba(255, 255, 255, 0.03);
+    --glass-shadow-bottom: rgba(0, 0, 0, 0.2);
+
+    /* 外阴影 — 深色环境下更强 */
+    --glass-shadow-near: rgba(0, 0, 0, 0.4);
+    --glass-shadow-mid: rgba(0, 0, 0, 0.25);
+    --glass-shadow-far: rgba(0, 0, 0, 0.3);
+    --glass-shadow-ambient: rgba(0, 0, 0, 0.2);
+
+    /* 文字颜色 — 亮色文字 */
+    --glass-text: rgba(255, 255, 255, 0.92);
+    --glass-text-secondary: rgba(255, 255, 255, 0.65);
+    --glass-dot: rgba(255, 255, 255, 0.75);
+    --glass-bar: rgba(255, 255, 255, 0.7);
+
+    /* 折射色散 — 暗色下更微妙 */
+    --glass-refract-cool: rgba(120, 160, 255, 0.03);
+    --glass-refract-warm: rgba(255, 160, 120, 0.02);
+
+    /* 闪光 */
+    --glass-flash: rgba(255, 255, 255, 0.08);
+    --glass-ripple: rgba(255, 255, 255, 0.35);
+    --glass-ripple-mid: rgba(255, 255, 255, 0.1);
+  }
+}
+
+/* ── 液态玻璃主体 ── */
+.liquid-glass {
+  position: relative;
+  /* 多层背景渐变：模拟光线穿过弧面玻璃的折射 */
+  background:
+    linear-gradient(180deg,
+      var(--glass-bg-start) 0%,
+      var(--glass-bg-mid) 40%,
+      var(--glass-bg-end) 100%);
+  /* 核心：高强度模糊 + 高饱和度 + 微调亮度/对比度 */
+  backdrop-filter:
+    blur(50px) saturate(200%) brightness(1.05) contrast(1.05);
+  -webkit-backdrop-filter:
+    blur(50px) saturate(200%) brightness(1.05) contrast(1.05);
+  /* 精致的半透明边框 */
+  border: 0.5px solid var(--glass-border);
+  /* 多层阴影系统 */
+  box-shadow:
+    /* 1. 顶部内高光 — 模拟光源照射 */
+    inset 0 0.5px 0 0 var(--glass-highlight-top),
+    /* 2. 内侧柔和发光 */
+    inset 0 0 6px 0 var(--glass-highlight-inner),
+    /* 3. 底部内暗线 — 深度感 */
+    inset 0 -0.5px 0 0 var(--glass-shadow-bottom),
+    /* 4. 紧贴外阴影 */
+    0 0.5px 1px 0 var(--glass-shadow-near),
+    /* 5. 中层扩散阴影 */
+    0 2px 8px 0 var(--glass-shadow-mid),
+    /* 6. 远层浮起阴影 */
+    0 8px 24px -4px var(--glass-shadow-far),
+    /* 7. 环境阴影 */
+    0 16px 40px -8px var(--glass-shadow-ambient);
+  overflow: hidden;
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+}
+
+/* ── 高光层：旋转光泽扫过效果 ── */
 .liquid-glass-highlight {
   position: absolute;
   inset: 0;
   border-radius: inherit;
   pointer-events: none;
+  mix-blend-mode: overlay;
+  opacity: 0.6;
 }
 
-/* ── Rim Light: subtle rainbow border ── */
+/* ── 边框光环层 ── */
 .liquid-glass-rim {
   position: absolute;
-  inset: -1px;
+  inset: -0.5px;
   border-radius: inherit;
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
-  padding: 1px;
+  padding: 0.5px;
   pointer-events: none;
-  opacity: 0.7;
+  opacity: 0.5;
+  transition: opacity 0.3s ease;
 }
 
-/* Listening state: rim turns red */
 .liquid-glass-rim.listening {
-  opacity: 0.9;
+  opacity: 0.85;
 }
 
-/* ── Ripple effect (triggered via JS adding .active class) ── */
+/* ── 折射模拟层 ── */
+.liquid-glass-refraction {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 120% 80% at 30% 20%,
+      var(--glass-refract-cool) 0%,
+      transparent 50%),
+    radial-gradient(ellipse 100% 100% at 70% 80%,
+      var(--glass-refract-warm) 0%,
+      transparent 50%);
+  mix-blend-mode: overlay;
+}
+
+/* ── 涟漪效果 ── */
 .liquid-glass-ripple {
   position: absolute;
   width: 60px;
   height: 60px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(255,255,255,0.6) 0%, transparent 70%);
+  background: radial-gradient(circle,
+      var(--glass-ripple) 0%,
+      var(--glass-ripple-mid) 40%,
+      transparent 70%);
   pointer-events: none;
   transform: translate(-50%, -50%) scale(0);
   opacity: 0;
 }
 
 .liquid-glass-ripple.active {
-  animation: ripple-expand 300ms ease-out forwards;
+  animation: ripple-expand 350ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
 @keyframes ripple-expand {
-  0%   { transform: translate(-50%, -50%) scale(0); opacity: 0.8; }
-  100% { transform: translate(-50%, -50%) scale(2.5); opacity: 0; }
+  0% {
+    transform: translate(-50%, -50%) scale(0);
+    opacity: 0.9;
+  }
+
+  100% {
+    transform: translate(-50%, -50%) scale(3);
+    opacity: 0;
+  }
 }
 
-/* ── State flash: brief brightness boost on transitions ── */
+/* ── 状态闪光 ── */
 .liquid-glass-flash {
   position: absolute;
   inset: 0;
   border-radius: inherit;
   background: rgba(255, 255, 255, 0);
   pointer-events: none;
-  transition: background 0.15s ease-out;
+  transition: background 0.12s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .liquid-glass-flash.active {
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--glass-flash);
+}
+
+/* ── 噪点纹理层 ── */
+.liquid-glass-noise {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0.03;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 128px 128px;
 }
