@@ -103,32 +103,57 @@ body,
   }
 }
 
+@property --highlight-angle {
+  syntax: '<angle>';
+  initial-value: 135deg;
+  inherits: false;
+}
+
+@property --rim-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@keyframes spin-highlight {
+  to {
+    --highlight-angle: 495deg;
+  }
+}
+
+@keyframes spin-rim {
+  to {
+    --rim-angle: 360deg;
+  }
+}
+
 /* ── 液态玻璃主体 ── */
 .liquid-glass {
   position: relative;
-  /* 多层背景渐变：模拟光线穿过弧面玻璃的折射 */
+  /* 多层微距背景渐变：极大丰富折射细节，增加微弱噪点质感 */
   background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.0) 100%),
     linear-gradient(180deg,
       var(--glass-bg-start) 0%,
       var(--glass-bg-mid) 40%,
       var(--glass-bg-end) 100%);
-  /* 简化版模糊：降低强度提高稳定性，移除 brightness/contrast 避免闪烁 */
+  /* 极大增强毛玻璃物理模糊及色彩饱和度，逼真重现 MacOS 视效 */
   backdrop-filter:
-    blur(32px) saturate(150%);
+    blur(24px) saturate(180%) contrast(1.05);
   -webkit-backdrop-filter:
-    blur(32px) saturate(150%);
+    blur(24px) saturate(180%) contrast(1.05);
   /* 硬件加速 */
   transform: translateZ(0);
   -webkit-transform: translateZ(0);
   will-change: transform, opacity;
-  /* 精致的半透明边框 */
+  /* 玻璃厚度边缘反光倒角 */
   border: 0.5px solid var(--glass-border);
-  /* 简化阴影系统 */
+  /* 复杂3D多层阴影：内高光模拟厚度反光，全局阴影模拟体积深邃感 */
   box-shadow:
-    inset 0 0.5px 0 0 var(--glass-highlight-top),
-    inset 0 -0.5px 0 0 var(--glass-shadow-bottom),
-    0 2px 8px 0 var(--glass-shadow-mid),
-    0 8px 24px -4px var(--glass-shadow-far);
+    inset 0 1px 1.5px 0 var(--glass-highlight-top),
+    inset 0 -1px 1px 0 var(--glass-shadow-bottom),
+    0 4px 12px 0 var(--glass-shadow-mid),
+    0 12px 32px -4px var(--glass-shadow-far);
   overflow: hidden;
 }
 
@@ -140,7 +165,9 @@ body,
   pointer-events: none;
   mix-blend-mode: overlay;
   opacity: 0.6;
-  will-change: background;
+  background: linear-gradient(var(--highlight-angle), var(--glass-highlight-top) 0%, rgba(255, 255, 255, 0.08) 35%, transparent 60%);
+  animation: spin-highlight 10s linear infinite;
+  will-change: --highlight-angle;
 }
 
 /* ── 边框光环层 ── */
@@ -159,12 +186,16 @@ body,
   padding: 0.5px;
   pointer-events: none;
   opacity: 0.5;
-  transition: opacity 0.3s ease;
-  will-change: background;
+  transition: opacity 0.3s ease, background 0.3s ease;
+  background: conic-gradient(from var(--rim-angle), rgba(255, 255, 255, 0.25), rgba(200, 220, 255, 0.2), rgba(255, 200, 180, 0.18), rgba(200, 255, 220, 0.18), rgba(180, 200, 255, 0.2), rgba(255, 255, 255, 0.25));
+  animation: spin-rim 6s linear infinite;
+  will-change: --rim-angle;
 }
 
 .liquid-glass-rim.listening {
   opacity: 0.85;
+  background: conic-gradient(from var(--rim-angle), rgba(255, 80, 80, 0.65), rgba(255, 130, 110, 0.5), rgba(255, 80, 80, 0.65), rgba(255, 60, 60, 0.5), rgba(255, 80, 80, 0.65));
+  animation: spin-rim 3s linear infinite;
 }
 
 /* ── 折射模拟层 ── */

@@ -73,6 +73,38 @@ fn resample(samples: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
 fn do_toggle_recording(app: &AppHandle) {
     let state = app.state::<AppState>();
 
+    if let Some(win) = app.get_window("main") {
+        #[cfg(target_os = "macos")]
+        {
+            use cocoa::appkit::NSEvent;
+            use cocoa::foundation::NSPoint;
+            use cocoa::base::nil;
+            let loc: NSPoint = unsafe { NSEvent::mouseLocation(nil) };
+            if let Ok(Some(monitor)) = win.primary_monitor() {
+                let scale = monitor.scale_factor();
+                let sh = monitor.size().height as f64 / scale;
+                let wx = loc.x - 100.0;
+                let wy = sh - loc.y + 20.0; 
+                let _ = win.set_position(tauri::Position::Logical(
+                    tauri::LogicalPosition::new(wx, wy)
+                ));
+            }
+        }
+        #[cfg(target_os = "macos")]
+        {
+            use cocoa::appkit::NSWindow;
+            use cocoa::base::id;
+            let ns_window = win.ns_window().unwrap() as id;
+            unsafe {
+                ns_window.orderFrontRegardless();
+            }
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = win.show();
+        }
+    }
+
     // Debounce: ignore if < 600ms since last toggle
     {
         let mut last = state.last_toggle.lock().unwrap();
@@ -144,17 +176,42 @@ fn do_toggle_recording(app: &AppHandle) {
                                     display_time,
                                 ));
                                 emit_state(&app_for_timer, "idle", None);
+                                std::thread::sleep(std::time::Duration::from_millis(500));
+                                if let Some(win) = app_for_timer.get_window("main") {
+                                    let state = app_for_timer.state::<AppState>();
+                                    if !state.is_recording.load(Ordering::SeqCst) {
+                                        let _ = win.hide();
+                                    }
+                                }
                             });
                         }
                         _ => {
                             eprintln!("[recognizer] No speech detected");
                             emit_state(&app_handle, "idle", None);
+                            std::thread::spawn(move || {
+                                std::thread::sleep(std::time::Duration::from_millis(500));
+                                if let Some(win) = app_handle.get_window("main") {
+                                    let state = app_handle.state::<AppState>();
+                                    if !state.is_recording.load(Ordering::SeqCst) {
+                                        let _ = win.hide();
+                                    }
+                                }
+                            });
                         }
                     }
                 }
                 None => {
                     eprintln!("[audio] No valid audio (too short or empty)");
                     emit_state(&app_handle, "idle", None);
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_millis(500));
+                        if let Some(win) = app_handle.get_window("main") {
+                            let state = app_handle.state::<AppState>();
+                            if !state.is_recording.load(Ordering::SeqCst) {
+                                let _ = win.hide();
+                            }
+                        }
+                    });
                 }
             }
         });
@@ -174,6 +231,13 @@ fn do_toggle_recording(app: &AppHandle) {
             std::thread::spawn(move || {
                 std::thread::sleep(std::time::Duration::from_secs(3));
                 emit_state(&app_c, "idle", None);
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                if let Some(win) = app_c.get_window("main") {
+                    let state = app_c.state::<AppState>();
+                    if !state.is_recording.load(Ordering::SeqCst) {
+                        let _ = win.hide();
+                    }
+                }
             });
         }
     }
@@ -199,71 +263,156 @@ fn quit_app(app: AppHandle) {
 }
 
 /// Initialize the backend: download model if needed, then load the recognizer.
-fn initialize_backend(app_handle: AppHandle) {
+fn initialize_backend(app_handle: AppHandle, model_name: String) {
     std::thread::spawn(move || {
         emit_state(&app_handle, "starting", None);
 
-        // Ensure model is downloaded
-        if let Err(e) = model::ensure_model(&app_handle) {
-            eprintln!("[init] Model download failed: {}", e);
-            emit_state(
-                &app_handle,
-                "error",
-                Some(format!("模型下载失败: {}", e)),
-            );
-            return;
+        // Disconnect old recognizer first to free memory
+        {
+            let state = app_handle.state::<AppState>();
+            *state.recognizer.lock().unwrap() = None;
         }
 
-        // Get model paths
-        let model_path = match model::model_path(&app_handle) {
-            Ok(p) => p,
-            Err(e) => {
-                eprintln!("[init] Model path error: {}", e);
-                emit_state(&app_handle, "error", Some(e));
+        if model_name == "whisper" {
+            if let Err(e) = model::ensure_whisper(&app_handle) {
+                eprintln!("[init] Whisper download failed: {}", e);
+                emit_state(&app_handle, "error", Some(format!("模型下载失败: {}", e)));
                 return;
             }
-        };
-        let tokens_path = match model::tokens_path(&app_handle) {
-            Ok(p) => p,
-            Err(e) => {
-                eprintln!("[init] Tokens path error: {}", e);
-                emit_state(&app_handle, "error", Some(e));
-                return;
-            }
-        };
 
-        // Load SenseVoice recognizer
-        eprintln!("[init] Loading SenseVoice model...");
-        match SpeechRecognizer::new(
-            model_path.to_str().unwrap(),
-            tokens_path.to_str().unwrap(),
-        ) {
-            Ok(rec) => {
-                let state = app_handle.state::<AppState>();
-                *state.recognizer.lock().unwrap() = Some(rec);
-                eprintln!("[init] SenseVoice model loaded successfully");
+            let enc = model::whisper_encoder_path(&app_handle).unwrap();
+            let dec = model::whisper_decoder_path(&app_handle).unwrap();
+            let tok = model::whisper_tokens_path(&app_handle).unwrap();
 
-                // Check accessibility permission for text injection
-                #[cfg(target_os = "macos")]
-                {
-                    let trusted = state.injector.check_accessibility();
-                    if !trusted {
-                        eprintln!("[init] WARNING: Accessibility permission not granted. Text injection will use osascript fallback.");
-                    }
+            eprintln!("[init] Loading Whisper model...");
+            match SpeechRecognizer::new_whisper(
+                enc.to_str().unwrap(),
+                dec.to_str().unwrap(),
+                tok.to_str().unwrap()
+            ) {
+                Ok(rec) => {
+                    let state = app_handle.state::<AppState>();
+                    *state.recognizer.lock().unwrap() = Some(rec);
+                    eprintln!("[init] Whisper loaded successfully");
+                    emit_state(&app_handle, "idle", None);
+                    let app_c = app_handle.clone();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_secs(2));
+                        if let Some(win) = app_c.get_window("main") {
+                            let state = app_c.state::<AppState>();
+                            if !state.is_recording.load(Ordering::SeqCst) {
+                                let _ = win.hide();
+                            }
+                        }
+                    });
                 }
-
-                emit_state(&app_handle, "idle", None);
+                Err(e) => {
+                    eprintln!("[init] Failed to load Whisper: {}", e);
+                    emit_state(&app_handle, "error", Some(format!("模型加载失败: {}", e)));
+                }
             }
-            Err(e) => {
-                eprintln!("[init] Failed to load model: {}", e);
-                emit_state(
-                    &app_handle,
-                    "error",
-                    Some(format!("模型加载失败: {}", e)),
-                );
+        } else if model_name == "paraformer" {
+            if let Err(e) = model::ensure_paraformer(&app_handle) {
+                eprintln!("[init] Paraformer download failed: {}", e);
+                emit_state(&app_handle, "error", Some(format!("模型下载失败: {}", e)));
+                return;
+            }
+
+            let p_model = model::paraformer_model_path(&app_handle).unwrap();
+            let p_tokens = model::paraformer_tokens_path(&app_handle).unwrap();
+
+            eprintln!("[init] Loading Paraformer model...");
+            match SpeechRecognizer::new_paraformer(
+                p_model.to_str().unwrap(),
+                p_tokens.to_str().unwrap(),
+            ) {
+                Ok(rec) => {
+                    let state = app_handle.state::<AppState>();
+                    *state.recognizer.lock().unwrap() = Some(rec);
+                    eprintln!("[init] Paraformer loaded successfully");
+                    emit_state(&app_handle, "idle", None);
+                    let app_c = app_handle.clone();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_secs(2));
+                        if let Some(win) = app_c.get_window("main") {
+                            let state = app_c.state::<AppState>();
+                            if !state.is_recording.load(Ordering::SeqCst) {
+                                let _ = win.hide();
+                            }
+                        }
+                    });
+                }
+                Err(e) => {
+                    eprintln!("[init] Failed to load Paraformer: {}", e);
+                    emit_state(&app_handle, "error", Some(format!("模型加载失败: {}", e)));
+                }
+            }
+        } else {
+            // Default to SenseVoice
+            if let Err(e) = model::ensure_sensevoice(&app_handle) {
+                eprintln!("[init] SenseVoice download failed: {}", e);
+                emit_state(&app_handle, "error", Some(format!("模型下载失败: {}", e)));
+                return;
+            }
+
+            let model_path = model::sensevoice_model_path(&app_handle).unwrap();
+            let tokens_path = model::sensevoice_tokens_path(&app_handle).unwrap();
+
+            eprintln!("[init] Loading SenseVoice model...");
+            match SpeechRecognizer::new_sensevoice(
+                model_path.to_str().unwrap(),
+                tokens_path.to_str().unwrap(),
+            ) {
+                Ok(rec) => {
+                    let state = app_handle.state::<AppState>();
+                    *state.recognizer.lock().unwrap() = Some(rec);
+                    eprintln!("[init] SenseVoice loaded successfully");
+                    emit_state(&app_handle, "idle", None);
+                    let app_c = app_handle.clone();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_secs(2));
+                        if let Some(win) = app_c.get_window("main") {
+                            let state = app_c.state::<AppState>();
+                            if !state.is_recording.load(Ordering::SeqCst) {
+                                let _ = win.hide();
+                            }
+                        }
+                    });
+                }
+                Err(e) => {
+                    eprintln!("[init] Failed to load SenseVoice: {}", e);
+                    emit_state(&app_handle, "error", Some(format!("模型加载失败: {}", e)));
+                }
+            }
+        }
+
+        // Display macOS accessibility warning
+        #[cfg(target_os = "macos")]
+        {
+            let state = app_handle.state::<AppState>();
+            let trusted = state.injector.check_accessibility();
+            if !trusted {
+                eprintln!("[init] WARNING: Accessibility permission not granted. Text injection will use osascript fallback.");
             }
         }
     });
+}
+
+#[tauri::command]
+fn switch_model(name: String, app: AppHandle) -> Result<(), String> {
+    eprintln!("[command] switch_model payload: {}", name);
+    let state = app.state::<AppState>();
+    
+    // Stop recording before switching models to free resources
+    let was_recording = state.is_recording.load(Ordering::SeqCst);
+    if was_recording {
+        state.is_recording.store(false, Ordering::SeqCst);
+        let _ = state.recorder.stop();
+        sound::play_stop_sound();
+    }
+    
+    initialize_backend(app, name);
+    Ok(())
 }
 
 fn main() {
@@ -300,7 +449,7 @@ fn main() {
             is_recording: AtomicBool::new(false),
             last_toggle: Mutex::new(std::time::Instant::now()),
         })
-        .invoke_handler(tauri::generate_handler![toggle_recording, quit_app])
+        .invoke_handler(tauri::generate_handler![toggle_recording, quit_app, switch_model])
         .system_tray(system_tray)
         .on_system_tray_event(|app, event| match event {
             SystemTrayEvent::LeftClick { .. } => {
@@ -340,7 +489,7 @@ fn main() {
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
             // Initialize backend (model download + recognizer loading)
-            initialize_backend(app.handle());
+            initialize_backend(app.handle(), "sensevoice".to_string());
 
             // Register global shortcut: Alt+Space to toggle recording
             let handle = app.handle();
@@ -365,6 +514,9 @@ fn main() {
                     ns_window.setBackgroundColor_(NSColor::clearColor(nil));
                     // Floating panel level (above normal windows)
                     let _: () = msg_send![ns_window, setLevel: 3i64];
+                    // Join all spaces, stationary, fullscreen auxiliary
+                    let collection_behavior: u64 = (1 << 0) | (1 << 4) | (1 << 6);
+                    let _: () = msg_send![ns_window, setCollectionBehavior: collection_behavior];
                 }
 
                 window
