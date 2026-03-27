@@ -28,6 +28,7 @@ tauri = { version = "1.8.1", features = [
 sherpa-rs = { version = "0.6", features = ["download-binaries"] }
 cpal = "0.15"
 reqwest = { version = "0.11", features = ["blocking"] }
+rtrb = "0.3"
 libc = "0.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -39,6 +40,7 @@ lto = true
 codegen-units = 1
 strip = true
 opt-level = 3
+panic = "abort"
 
 [features]
 # DO NOT REMOVE!!
