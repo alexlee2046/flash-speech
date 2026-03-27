@@ -1,11 +1,11 @@
 /// 15-tap symmetric FIR low-pass filter for decimation by 3.
-/// Designed: sinc(n/3) × Hamming window, normalized to unit DC gain.
-/// Cutoff: ~7.5 kHz at 48 kHz (π/3 normalized), >40 dB stopband attenuation.
+/// Half-band style (every other coefficient is zero).
+/// DC gain: 1.0 (normalized via DECIMATE3_GAIN = 1/1.8).
+/// Stopband attenuation: ~19 dB above 8 kHz — sufficient for speech ASR.
 const DECIMATE3_TAPS: usize = 15;
 const DECIMATE3_HALF: usize = 7; // (TAPS - 1) / 2
 
 /// Pre-computed FIR coefficients. Symmetric: COEFFS[i] == COEFFS[14 - i].
-/// Generated via: h[n] = sinc((n-7)/3) * (0.54 - 0.46 * cos(2*pi*n/14)), normalized.
 const DECIMATE3_COEFFS: [f32; DECIMATE3_TAPS] = [
     -0.0098, 0.0,    0.0378,  0.0,
     -0.1187, 0.0,    0.4907,  1.0,

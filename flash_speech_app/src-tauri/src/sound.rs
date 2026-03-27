@@ -57,7 +57,7 @@ pub fn init() {
         let stream = device.build_output_stream(
             &stream_config,
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                if !pl.load(Ordering::Relaxed) {
+                if !pl.load(Ordering::Acquire) {
                     // Fill with silence when not playing
                     for s in data.iter_mut() {
                         *s = 0.0;
@@ -117,7 +117,7 @@ pub fn init() {
 
             *current_samples.lock().unwrap() = Some(samples);
             position.store(0, Ordering::Relaxed);
-            playing.store(true, Ordering::Relaxed);
+            playing.store(true, Ordering::Release);
         }
 
         // rx dropped = app shutting down, stream drops here
