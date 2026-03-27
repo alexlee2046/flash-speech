@@ -35,6 +35,7 @@ struct AppState {
     injector: TextInjector,
     is_recording: AtomicBool,
     last_toggle: Mutex<std::time::Instant>,
+    language: Mutex<String>,
 }
 
 fn emit_state(app: &AppHandle, state: &str, text: Option<String>) {
@@ -312,11 +313,13 @@ fn initialize_backend(app_handle: AppHandle, model_name: String) {
             let model_path = model::sensevoice_model_path(&app_handle).unwrap();
             let tokens_path = model::sensevoice_tokens_path(&app_handle).unwrap();
 
-            eprintln!("[init] Loading SenseVoice model...");
+            let language = app_handle.state::<AppState>().language.lock().unwrap().clone();
+            eprintln!("[init] Loading SenseVoice model (language={})...", language);
             let load_start = std::time::Instant::now();
             match SpeechRecognizer::new_sensevoice(
                 model_path.to_str().unwrap(),
                 tokens_path.to_str().unwrap(),
+                &language,
             ) {
                 Ok(rec) => {
                     let state = app_handle.state::<AppState>();
@@ -342,6 +345,16 @@ fn initialize_backend(app_handle: AppHandle, model_name: String) {
             }
         }
     });
+}
+
+#[tauri::command]
+fn switch_language(lang: String, app: AppHandle) -> Result<(), String> {
+    eprintln!("[command] switch_language: {}", lang);
+    let state = app.state::<AppState>();
+    *state.language.lock().unwrap() = lang;
+    // Re-initialize with current model (sensevoice) to apply language change
+    initialize_backend(app, "sensevoice".to_string());
+    Ok(())
 }
 
 #[tauri::command]
@@ -394,8 +407,9 @@ fn main() {
             injector: TextInjector::new(),
             is_recording: AtomicBool::new(false),
             last_toggle: Mutex::new(std::time::Instant::now()),
+            language: Mutex::new("auto".to_string()),
         })
-        .invoke_handler(tauri::generate_handler![toggle_recording, quit_app, switch_model])
+        .invoke_handler(tauri::generate_handler![toggle_recording, quit_app, switch_model, switch_language])
         .system_tray(system_tray)
         .on_system_tray_event(|app, event| match event {
             SystemTrayEvent::LeftClick { .. } => {

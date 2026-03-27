@@ -21,15 +21,15 @@ fn optimal_thread_count() -> i32 {
 }
 
 impl SpeechRecognizer {
-    pub fn new_sensevoice(model_path: &str, tokens_path: &str) -> Result<Self, String> {
+    pub fn new_sensevoice(model_path: &str, tokens_path: &str, language: &str) -> Result<Self, String> {
         let num_threads = optimal_thread_count();
-        eprintln!("[recognizer] SenseVoice using {} threads", num_threads);
+        eprintln!("[recognizer] SenseVoice using {} threads, language={}", num_threads, language);
 
         let config = SenseVoiceConfig {
             model: model_path.to_string(),
             tokens: tokens_path.to_string(),
             use_itn: true,
-            language: "zh".to_string(),
+            language: language.to_string(),
             num_threads: Some(num_threads),
             ..Default::default()
         };
