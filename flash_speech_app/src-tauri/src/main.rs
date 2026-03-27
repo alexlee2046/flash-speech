@@ -48,11 +48,11 @@ fn emit_state(app: &AppHandle, state: &str, text: Option<String>) {
 }
 
 fn delayed_hide(app: AppHandle, delay_ms: u64) {
-    std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
         if let Some(win) = app.get_window("main") {
             let state = app.state::<AppState>();
-            if !state.is_recording.load(Ordering::SeqCst) {
+            if !state.is_recording.load(Ordering::Acquire) {
                 let _ = win.hide();
             }
         }
@@ -108,11 +108,11 @@ fn do_toggle_recording(app: &AppHandle) {
         *last = now;
     }
 
-    let was_recording = state.is_recording.load(Ordering::SeqCst);
+    let was_recording = state.is_recording.load(Ordering::Acquire);
 
     if was_recording {
         // Stop recording → process audio
-        state.is_recording.store(false, Ordering::SeqCst);
+        state.is_recording.store(false, Ordering::Release);
         eprintln!("[shortcut] toggle → stop_record");
         sound::play_stop_sound();
 
@@ -166,15 +166,15 @@ fn do_toggle_recording(app: &AppHandle) {
                             // Inject text BEFORE updating HUD to avoid focus steal
                             state.injector.inject(&text);
 
-                            emit_state(&app_handle, "result", Some(text.clone()));
+                            let display_time = (text.len() as f64 * 0.08).max(2.0);
+                            emit_state(&app_handle, "result", Some(text));
 
                             // Auto-reset to idle after display time
-                            let display_time = (text.len() as f64 * 0.08).max(2.0);
                             let app_for_timer = app_handle.clone();
-                            std::thread::spawn(move || {
-                                std::thread::sleep(std::time::Duration::from_secs_f64(
+                            tauri::async_runtime::spawn(async move {
+                                tokio::time::sleep(std::time::Duration::from_secs_f64(
                                     display_time,
-                                ));
+                                )).await;
                                 emit_state(&app_for_timer, "idle", None);
                                 delayed_hide(app_for_timer, 200);
                             });
@@ -195,19 +195,19 @@ fn do_toggle_recording(app: &AppHandle) {
         });
     } else {
         // Start recording
-        state.is_recording.store(true, Ordering::SeqCst);
+        state.is_recording.store(true, Ordering::Release);
         eprintln!("[shortcut] toggle → start_record");
         sound::play_start_sound();
         emit_state(app, "listening", None);
 
         if let Err(e) = state.recorder.start() {
             eprintln!("[audio] Failed to start: {}", e);
-            state.is_recording.store(false, Ordering::SeqCst);
+            state.is_recording.store(false, Ordering::Release);
             emit_state(app, "error", None);
             // Auto-reset error after 3s
             let app_c = app.clone();
-            std::thread::spawn(move || {
-                std::thread::sleep(std::time::Duration::from_secs(3));
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
                 emit_state(&app_c, "idle", None);
                 delayed_hide(app_c, 200);
             });
@@ -350,9 +350,9 @@ fn switch_model(name: String, app: AppHandle) -> Result<(), String> {
     let state = app.state::<AppState>();
     
     // Stop recording before switching models to free resources
-    let was_recording = state.is_recording.load(Ordering::SeqCst);
+    let was_recording = state.is_recording.load(Ordering::Acquire);
     if was_recording {
-        state.is_recording.store(false, Ordering::SeqCst);
+        state.is_recording.store(false, Ordering::Release);
         let _ = state.recorder.stop();
         sound::play_stop_sound();
     }

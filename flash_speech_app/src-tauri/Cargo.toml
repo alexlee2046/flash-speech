@@ -30,6 +30,7 @@ cpal = "0.15"
 reqwest = { version = "0.11", features = ["blocking"] }
 rtrb = "0.3"
 libc = "0.2"
+tokio = { version = "1", features = ["time"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 cocoa = "0.24"
