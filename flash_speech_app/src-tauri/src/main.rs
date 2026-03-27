@@ -434,6 +434,9 @@ fn main() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
+            // Initialize persistent sound system
+            sound::init();
+
             // Initialize backend (model download + recognizer loading)
             initialize_backend(app.handle(), "sensevoice".to_string());
 
