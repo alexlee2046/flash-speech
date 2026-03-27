@@ -29,7 +29,11 @@ impl AudioRecorder {
             return Ok(());
         }
 
-        self.buffer.lock().unwrap().clear();
+        let rate = *self.device_sample_rate.lock().unwrap();
+        let mut buf = self.buffer.lock().unwrap();
+        buf.clear();
+        buf.reserve((rate as usize) * 10);
+        drop(buf);
         *self.start_time.lock().unwrap() = Some(Instant::now());
         self.recording.store(true, Ordering::SeqCst);
 
@@ -139,7 +143,7 @@ impl AudioRecorder {
             }
 
             while recording.load(Ordering::SeqCst) {
-                std::thread::sleep(Duration::from_millis(50));
+                std::thread::sleep(Duration::from_millis(20));
             }
             // stream drops here, closing the audio device
         });
@@ -164,7 +168,7 @@ impl AudioRecorder {
         *self.start_time.lock().unwrap() = None;
 
         // Wait for recording thread to finish and release the stream
-        std::thread::sleep(Duration::from_millis(100));
+        std::thread::sleep(Duration::from_millis(50));
 
         if duration < MIN_DURATION {
             eprintln!(

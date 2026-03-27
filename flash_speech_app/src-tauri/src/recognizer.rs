@@ -18,6 +18,8 @@ impl SpeechRecognizer {
             model: model_path.to_string(),
             tokens: tokens_path.to_string(),
             use_itn: true,
+            language: "zh".to_string(),
+            num_threads: Some(2),
             ..Default::default()
         };
 
@@ -62,34 +64,12 @@ impl SpeechRecognizer {
     }
 
     pub fn transcribe(&mut self, sample_rate: u32, samples: &[f32]) -> Option<String> {
-        match &mut self.inner {
-            RecognizerType::SenseVoice(r) => {
-                let result = r.transcribe(sample_rate, samples);
-                let text = result.text.trim().to_string();
-                if text.is_empty() {
-                    None
-                } else {
-                    Some(text)
-                }
-            }
-            RecognizerType::Whisper(r) => {
-                let result = r.transcribe(sample_rate, samples);
-                let text = result.text.trim().to_string();
-                if text.is_empty() {
-                    None
-                } else {
-                    Some(text)
-                }
-            }
-            RecognizerType::Paraformer(r) => {
-                let result = r.transcribe(sample_rate, samples);
-                let text = result.text.trim().to_string();
-                if text.is_empty() {
-                    None
-                } else {
-                    Some(text)
-                }
-            }
-        }
+        let raw = match &mut self.inner {
+            RecognizerType::SenseVoice(r) => r.transcribe(sample_rate, samples).text,
+            RecognizerType::Whisper(r) => r.transcribe(sample_rate, samples).text,
+            RecognizerType::Paraformer(r) => r.transcribe(sample_rate, samples).text,
+        };
+        let text = raw.trim().to_string();
+        if text.is_empty() { None } else { Some(text) }
     }
 }

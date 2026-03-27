@@ -46,10 +46,22 @@ fn emit_state(app: &AppHandle, state: &str, text: Option<String>) {
     );
 }
 
+fn delayed_hide(app: AppHandle, delay_ms: u64) {
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+        if let Some(win) = app.get_window("main") {
+            let state = app.state::<AppState>();
+            if !state.is_recording.load(Ordering::SeqCst) {
+                let _ = win.hide();
+            }
+        }
+    });
+}
+
 /// Linear interpolation resampling (sufficient quality for speech recognition)
-fn resample(samples: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
+fn resample(samples: Vec<f32>, from_rate: u32, to_rate: u32) -> Vec<f32> {
     if from_rate == to_rate {
-        return samples.to_vec();
+        return samples;
     }
     let ratio = to_rate as f64 / from_rate as f64;
     let output_len = (samples.len() as f64 * ratio).ceil() as usize;
@@ -137,10 +149,11 @@ fn do_toggle_recording(app: &AppHandle) {
                     emit_state(&app_handle, "processing", None);
 
                     // Resample to 16kHz if needed
-                    let samples_16k = resample(&samples, sample_rate, 16000);
+                    let original_len = samples.len();
+                    let samples_16k = resample(samples, sample_rate, 16000);
                     eprintln!(
                         "[audio] Resampled: {} → {} samples ({}Hz → 16000Hz)",
-                        samples.len(),
+                        original_len,
                         samples_16k.len(),
                         sample_rate
                     );
@@ -176,42 +189,20 @@ fn do_toggle_recording(app: &AppHandle) {
                                     display_time,
                                 ));
                                 emit_state(&app_for_timer, "idle", None);
-                                std::thread::sleep(std::time::Duration::from_millis(500));
-                                if let Some(win) = app_for_timer.get_window("main") {
-                                    let state = app_for_timer.state::<AppState>();
-                                    if !state.is_recording.load(Ordering::SeqCst) {
-                                        let _ = win.hide();
-                                    }
-                                }
+                                delayed_hide(app_for_timer, 200);
                             });
                         }
                         _ => {
                             eprintln!("[recognizer] No speech detected");
                             emit_state(&app_handle, "idle", None);
-                            std::thread::spawn(move || {
-                                std::thread::sleep(std::time::Duration::from_millis(500));
-                                if let Some(win) = app_handle.get_window("main") {
-                                    let state = app_handle.state::<AppState>();
-                                    if !state.is_recording.load(Ordering::SeqCst) {
-                                        let _ = win.hide();
-                                    }
-                                }
-                            });
+                            delayed_hide(app_handle, 200);
                         }
                     }
                 }
                 None => {
                     eprintln!("[audio] No valid audio (too short or empty)");
                     emit_state(&app_handle, "idle", None);
-                    std::thread::spawn(move || {
-                        std::thread::sleep(std::time::Duration::from_millis(500));
-                        if let Some(win) = app_handle.get_window("main") {
-                            let state = app_handle.state::<AppState>();
-                            if !state.is_recording.load(Ordering::SeqCst) {
-                                let _ = win.hide();
-                            }
-                        }
-                    });
+                    delayed_hide(app_handle, 200);
                 }
             }
         });
@@ -231,13 +222,7 @@ fn do_toggle_recording(app: &AppHandle) {
             std::thread::spawn(move || {
                 std::thread::sleep(std::time::Duration::from_secs(3));
                 emit_state(&app_c, "idle", None);
-                std::thread::sleep(std::time::Duration::from_millis(500));
-                if let Some(win) = app_c.get_window("main") {
-                    let state = app_c.state::<AppState>();
-                    if !state.is_recording.load(Ordering::SeqCst) {
-                        let _ = win.hide();
-                    }
-                }
+                delayed_hide(app_c, 200);
             });
         }
     }
@@ -252,7 +237,7 @@ fn do_quit(app: &AppHandle) {
     emit_state(app, "exiting", None);
     let app_clone = app.clone();
     std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(500));
+        std::thread::sleep(std::time::Duration::from_millis(300));
         app_clone.exit(0);
     });
 }
@@ -295,16 +280,7 @@ fn initialize_backend(app_handle: AppHandle, model_name: String) {
                     *state.recognizer.lock().unwrap() = Some(rec);
                     eprintln!("[init] Whisper loaded successfully");
                     emit_state(&app_handle, "idle", None);
-                    let app_c = app_handle.clone();
-                    std::thread::spawn(move || {
-                        std::thread::sleep(std::time::Duration::from_secs(2));
-                        if let Some(win) = app_c.get_window("main") {
-                            let state = app_c.state::<AppState>();
-                            if !state.is_recording.load(Ordering::SeqCst) {
-                                let _ = win.hide();
-                            }
-                        }
-                    });
+                    delayed_hide(app_handle.clone(), 2000);
                 }
                 Err(e) => {
                     eprintln!("[init] Failed to load Whisper: {}", e);
@@ -331,16 +307,7 @@ fn initialize_backend(app_handle: AppHandle, model_name: String) {
                     *state.recognizer.lock().unwrap() = Some(rec);
                     eprintln!("[init] Paraformer loaded successfully");
                     emit_state(&app_handle, "idle", None);
-                    let app_c = app_handle.clone();
-                    std::thread::spawn(move || {
-                        std::thread::sleep(std::time::Duration::from_secs(2));
-                        if let Some(win) = app_c.get_window("main") {
-                            let state = app_c.state::<AppState>();
-                            if !state.is_recording.load(Ordering::SeqCst) {
-                                let _ = win.hide();
-                            }
-                        }
-                    });
+                    delayed_hide(app_handle.clone(), 2000);
                 }
                 Err(e) => {
                     eprintln!("[init] Failed to load Paraformer: {}", e);
@@ -359,6 +326,7 @@ fn initialize_backend(app_handle: AppHandle, model_name: String) {
             let tokens_path = model::sensevoice_tokens_path(&app_handle).unwrap();
 
             eprintln!("[init] Loading SenseVoice model...");
+            let load_start = std::time::Instant::now();
             match SpeechRecognizer::new_sensevoice(
                 model_path.to_str().unwrap(),
                 tokens_path.to_str().unwrap(),
@@ -366,18 +334,9 @@ fn initialize_backend(app_handle: AppHandle, model_name: String) {
                 Ok(rec) => {
                     let state = app_handle.state::<AppState>();
                     *state.recognizer.lock().unwrap() = Some(rec);
-                    eprintln!("[init] SenseVoice loaded successfully");
+                    eprintln!("[init] SenseVoice loaded successfully in {:?}", load_start.elapsed());
                     emit_state(&app_handle, "idle", None);
-                    let app_c = app_handle.clone();
-                    std::thread::spawn(move || {
-                        std::thread::sleep(std::time::Duration::from_secs(2));
-                        if let Some(win) = app_c.get_window("main") {
-                            let state = app_c.state::<AppState>();
-                            if !state.is_recording.load(Ordering::SeqCst) {
-                                let _ = win.hide();
-                            }
-                        }
-                    });
+                    delayed_hide(app_handle.clone(), 2000);
                 }
                 Err(e) => {
                     eprintln!("[init] Failed to load SenseVoice: {}", e);
