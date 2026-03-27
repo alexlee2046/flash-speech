@@ -135,18 +135,28 @@ fn do_toggle_recording(app: &AppHandle) {
                         sample_rate
                     );
 
-                    // Transcribe
+                    // Transcribe (take/put to minimize mutex hold time)
                     let text = {
-                        let mut rec = state.recognizer.lock().unwrap();
-                        if let Some(ref mut recognizer) = *rec {
-                            let start = std::time::Instant::now();
-                            let result = recognizer.transcribe(16000, &samples_16k);
-                            eprintln!("[recognizer] Transcription took {:?}", start.elapsed());
-                            result
-                        } else {
-                            eprintln!("[recognizer] Not initialized yet");
-                            None
-                        }
+                        let mut recognizer = {
+                            let mut guard = state.recognizer.lock().unwrap();
+                            match guard.take() {
+                                Some(r) => r,
+                                None => {
+                                    eprintln!("[recognizer] Not initialized yet");
+                                    emit_state(&app_handle, "idle", None);
+                                    delayed_hide(app_handle.clone(), 200);
+                                    return;
+                                }
+                            }
+                        }; // mutex released here
+
+                        let start = std::time::Instant::now();
+                        let result = recognizer.transcribe(16000, &samples_16k);
+                        eprintln!("[recognizer] Transcription took {:?}", start.elapsed());
+
+                        // Put the recognizer back
+                        *state.recognizer.lock().unwrap() = Some(recognizer);
+                        result
                     };
 
                     match text {
