@@ -7,6 +7,7 @@ mod audio;
 mod injector;
 mod model;
 mod recognizer;
+mod resample;
 mod sound;
 
 use audio::AudioRecorder;
@@ -56,30 +57,6 @@ fn delayed_hide(app: AppHandle, delay_ms: u64) {
             }
         }
     });
-}
-
-/// Linear interpolation resampling (sufficient quality for speech recognition)
-fn resample(samples: Vec<f32>, from_rate: u32, to_rate: u32) -> Vec<f32> {
-    if from_rate == to_rate {
-        return samples;
-    }
-    let ratio = to_rate as f64 / from_rate as f64;
-    let output_len = (samples.len() as f64 * ratio).ceil() as usize;
-    let mut output = Vec::with_capacity(output_len);
-    for i in 0..output_len {
-        let src_idx = i as f64 / ratio;
-        let idx_floor = src_idx.floor() as usize;
-        let frac = (src_idx - idx_floor as f64) as f32;
-        let sample = if idx_floor + 1 < samples.len() {
-            samples[idx_floor] * (1.0 - frac) + samples[idx_floor + 1] * frac
-        } else if idx_floor < samples.len() {
-            samples[idx_floor]
-        } else {
-            0.0
-        };
-        output.push(sample);
-    }
-    output
 }
 
 fn do_toggle_recording(app: &AppHandle) {
@@ -150,7 +127,7 @@ fn do_toggle_recording(app: &AppHandle) {
 
                     // Resample to 16kHz if needed
                     let original_len = samples.len();
-                    let samples_16k = resample(samples, sample_rate, 16000);
+                    let samples_16k = resample::resample(&samples, sample_rate, 16000);
                     eprintln!(
                         "[audio] Resampled: {} → {} samples ({}Hz → 16000Hz)",
                         original_len,
