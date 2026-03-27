@@ -57,13 +57,7 @@
 
 ### macOS 安装说明
 
-由于应用未经 Apple 签名，macOS 会阻止打开。安装后需要在终端运行：
-
-```bash
-xattr -cr /Applications/FlashSpeech.app
-```
-
-然后正常双击打开即可。
+下载 `.dmg` 文件，双击打开，将 FlashSpeech 拖入 Applications 文件夹即可。应用已通过 Apple Developer ID 签名和公证，无需额外操作。
 
 ### macOS 权限设置
 
@@ -87,6 +81,21 @@ xattr -cr /Applications/FlashSpeech.app
 ```
 按下 ⌥Space → 听到"嘟"声 → 开始说话 → 再按 ⌥Space → 听到"嘟嘟"声 → 自动识别并输入文字
 ```
+
+### 语言设置
+
+默认为自动识别（`auto`），支持中英日韩粤混合输入。如果你主要使用单一语言，可以通过右键菜单切换首选语言以获得更高的识别准确率：
+
+| 语言 | 代码 | 说明 |
+|------|------|------|
+| 自动识别 | `auto` | 默认，自动检测语言，适合多语言混用 |
+| 中文 | `zh` | 主要说中文时推荐，跳过语言检测更准确 |
+| English | `en` | 主要说英语时推荐 |
+| 日本語 | `ja` | 日语 |
+| 한국어 | `ko` | 韩语 |
+| 粤语 | `yue` | 粤语 |
+
+> 切换语言后模型会重新加载（约 1-2 秒），但不需要重新下载模型文件。
 
 ### HUD 状态说明
 
@@ -181,6 +190,8 @@ npm run tauri build
 4. 确保光标在可输入的文本框中
 
 ### Q: macOS 提示"已损坏，无法打开"？
+
+v2.0.0+ 版本已通过 Apple 签名和公证，正常情况下不会出现此问题。如果使用旧版本或自行编译，可在终端运行：
 
 ```bash
 xattr -cr /Applications/FlashSpeech.app
