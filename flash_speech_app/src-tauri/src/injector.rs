@@ -15,7 +15,7 @@ mod macos_paste {
     const K_CG_EVENT_FLAG_COMMAND: u64 = 1 << 20;
     const K_VK_V: u16 = 9;
     // Max characters per CGEvent Unicode string
-    const UNICODE_CHUNK_SIZE: usize = 20;
+    const UNICODE_CHUNK_SIZE: usize = 200;
 
     #[link(name = "CoreGraphics", kind = "framework")]
     extern "C" {
@@ -231,7 +231,7 @@ impl TextInjector {
             eprintln!("[injector] All paste methods failed");
         }
 
-        std::thread::sleep(Duration::from_millis(800));
+        std::thread::sleep(Duration::from_millis(300));
 
         if let Ok(mut child) = Command::new("pbcopy")
             .stdin(std::process::Stdio::piped())
