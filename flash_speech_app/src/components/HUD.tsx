@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/tauri';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, AlertTriangle, Power, LayoutGrid, Settings, Layers, Circle, CheckCircle2, Loader2 } from 'lucide-react';
+import { Check, AlertTriangle, Power, LayoutGrid, Settings, Layers, Circle, CheckCircle2, Loader2, Globe } from 'lucide-react';
 
 import { useWindowDynamicSize } from '../hooks/useWindowDynamicSize';
 import { useWindowDrag } from '../hooks/useWindowDrag';
@@ -22,7 +22,7 @@ const fade = {
 const PILL_H = 44;
 const PAD = 16;
 const MENU_PILL_W = 200;
-const MENU_PILL_H = 264;
+const MENU_PILL_H = 360;
 
 /**
  * SVG Filter 定义 — 微妙的光学折射扭曲
@@ -67,6 +67,10 @@ export function HUD({ state, text }: HUDProps) {
         return (localStorage.getItem('flashspeech_model') as 'sensevoice' | 'whisper' | 'paraformer') || 'sensevoice';
     });
     const [switching, setSwitching] = useState(false);
+    const [activeLanguage, setActiveLanguage] = useState<string>(() => {
+        return localStorage.getItem('flashspeech_language') || 'auto';
+    });
+    const [switchingLang, setSwitchingLang] = useState(false);
     const prevState = useRef(state);
 
     const displayText = text && text.length > 100 ? text.slice(0, 100) + '\u2026' : text;
@@ -138,6 +142,20 @@ export function HUD({ state, text }: HUDProps) {
         e.stopPropagation();
         setMenuOpen(false);
         invoke('quit_app').catch(console.error);
+    };
+
+    const handleSwitchLanguage = async (lang: string) => {
+        if (lang === activeLanguage || switchingLang) return;
+        setSwitchingLang(true);
+        try {
+            await invoke('switch_language', { lang });
+            setActiveLanguage(lang);
+            localStorage.setItem('flashspeech_language', lang);
+        } catch (e) {
+            console.error('Failed to switch language:', e);
+        } finally {
+            setSwitchingLang(false);
+        }
     };
 
     const handleSwitchModel = async (model: 'sensevoice' | 'whisper' | 'paraformer') => {
@@ -270,6 +288,44 @@ export function HUD({ state, text }: HUDProps) {
                                                 activeModel === 'paraformer' ? <CheckCircle2 className="w-[18px] h-[18px] text-green-500" /> : <Circle className="w-[18px] h-[18px] opacity-30" />
                                             )}
                                         </button>
+                                    </div>
+                                    {/* ── 识别语言 ── */}
+                                    <div className="flex flex-col gap-1 px-1 mt-2">
+                                        <div className="flex items-center gap-1.5 pl-2 mb-1.5 opacity-60">
+                                            <Globe className="w-3.5 h-3.5" style={textStyle} />
+                                            <span className="text-[11px] uppercase tracking-wider font-semibold" style={textStyle}>识别语言</span>
+                                            {switchingLang && <Loader2 className="w-3 h-3 animate-spin opacity-60 text-blue-500" />}
+                                        </div>
+                                        <div className="grid grid-cols-3 gap-1">
+                                            {([
+                                                ['auto', '自动'],
+                                                ['zh', '中文'],
+                                                ['en', 'EN'],
+                                                ['ja', '日本語'],
+                                                ['ko', '한국어'],
+                                                ['yue', '粤语'],
+                                            ] as const).map(([code, label]) => (
+                                                <button
+                                                    key={code}
+                                                    onClick={() => handleSwitchLanguage(code)}
+                                                    disabled={switchingLang}
+                                                    className="px-2 py-1 rounded-[6px] text-[11px] font-medium transition-colors text-center"
+                                                    style={{
+                                                        ...(activeLanguage === code ? textStyle : textSecondaryStyle),
+                                                        backgroundColor: activeLanguage === code ? 'rgba(52,211,153,0.15)' : 'transparent',
+                                                        border: activeLanguage === code ? '1px solid rgba(52,211,153,0.3)' : '1px solid transparent',
+                                                    }}
+                                                    onMouseEnter={(e) => {
+                                                        if (activeLanguage !== code) e.currentTarget.style.backgroundColor = 'rgba(128,128,128,0.1)';
+                                                    }}
+                                                    onMouseLeave={(e) => {
+                                                        e.currentTarget.style.backgroundColor = activeLanguage === code ? 'rgba(52,211,153,0.15)' : 'transparent';
+                                                    }}
+                                                >
+                                                    {label}
+                                                </button>
+                                            ))}
+                                        </div>
                                     </div>
                                 </div>
 
