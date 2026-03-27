@@ -37,8 +37,8 @@
           "Frameworks/libsherpa-onnx-c-api.dylib",
           "Frameworks/libsherpa-onnx-cxx-api.dylib"
         ],
-        "providerShortName": null,
-        "signingIdentity": "-"
+        "providerShortName": "PM6M3M34BA",
+        "signingIdentity": "Developer ID Application: Guangdong Mifeng Intelligent Technology Co., Ltd. (PM6M3M34BA)"
       },
       "icon": [
         "icons/32x32.png",
