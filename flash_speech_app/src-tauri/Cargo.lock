@@ -901,6 +901,7 @@ dependencies = [
  "sherpa-rs",
  "tauri",
  "tauri-build",
+ "tokio",
 ]
 
 [[package]]
